@@ -117,6 +117,7 @@ typedef ZoneList<Handle<Object> > ZoneObjectList;
 
 
 #define DECLARE_NODE_TYPE(type)                                         \
+  virtual void printType() { printf(#type); printf("\n"); }             \
   virtual void Accept(AstVisitor* v);                                   \
   virtual AstNode::Type node_type() const { return AstNode::k##type; }  \
   virtual type* As##type() { return this; }
@@ -151,6 +152,7 @@ class AstNode: public ZoneObject {
 
   virtual void Accept(AstVisitor* v) = 0;
   virtual Type node_type() const { return kInvalid; }
+  virtual void printType() { printf("none\n"); }
 
   // Type testing & conversion functions overridden by concrete subclasses.
 #define DECLARE_NODE_FUNCTIONS(type)                  \

@@ -43,6 +43,7 @@ class ParserLog;
 class PositionStack;
 class Target;
 class LexicalScope;
+class AsyncScope;
 
 template <typename T> class ZoneListWrapper;
 
@@ -412,6 +413,44 @@ class RegExpParser {
   bool failed_;
 };
 
+// Support class for handling the scope of an async function call
+// This keeps track of continuations, try/catch/finally targets,
+// break targets, continue targets, etc.
+class AsyncScope {
+public:
+  AsyncScope()
+    : breaked_(false),
+      previous_scope_(NULL),
+      is_try_(false) {
+  }
+
+  AsyncScope(AsyncScope* previous_scope,
+                  Handle<String> continuation,
+                  Handle<String> loop_next = Handle<String>(),
+                  Handle<String> loop_break = Handle<String>(),
+                  bool is_try = false);
+
+  bool log_break();
+  void set_loop_next(Handle<String> loop_next) { loop_next_ = loop_next; }
+  AsyncScope* break_target();
+  AsyncScope* try_target();
+
+  Handle<String> continuation() { return continuation_; }
+  Handle<String> loop_next() { return loop_next_; }
+  Handle<String> loop_break() { return loop_break_; }
+  bool breaked() { return breaked_; }
+private:
+  Handle<String> continuation_;
+  Handle<String> loop_next_;
+
+  Handle<String> loop_break_;
+  bool breaked_;
+
+  AsyncScope* previous_scope_;
+
+  bool is_try_;
+};
+
 // ----------------------------------------------------------------------------
 // JAVASCRIPT PARSING
 
@@ -500,19 +539,19 @@ class Parser {
                                    bool* ok);
   Statement* ParseExpressionOrLabelledStatement(ZoneStringList* labels,
                                                 bool* ok);
-  IfStatement* ParseIfStatement(ZoneStringList* labels, bool* ok);
+  Statement* ParseIfStatement(ZoneStringList* labels, bool* ok);
   Statement* ParseContinueStatement(bool* ok);
   Statement* ParseBreakStatement(ZoneStringList* labels, bool* ok);
   Statement* ParseReturnStatement(bool* ok);
   Statement* ParseWithStatement(ZoneStringList* labels, bool* ok);
   CaseClause* ParseCaseClause(bool* default_seen_ptr, bool* ok);
-  SwitchStatement* ParseSwitchStatement(ZoneStringList* labels, bool* ok);
-  DoWhileStatement* ParseDoWhileStatement(ZoneStringList* labels, bool* ok);
-  WhileStatement* ParseWhileStatement(ZoneStringList* labels, bool* ok);
+  Statement* ParseSwitchStatement(ZoneStringList* labels, bool* ok);
+  Statement* ParseDoWhileStatement(ZoneStringList* labels, bool* ok);
+  Statement* ParseWhileStatement(ZoneStringList* labels, bool* ok);
   Statement* ParseForStatement(ZoneStringList* labels, bool* ok);
   Statement* ParseThrowStatement(bool* ok);
   Expression* MakeCatchContext(Handle<String> id, VariableProxy* value);
-  TryStatement* ParseTryStatement(bool* ok);
+  Statement* ParseTryStatement(bool* ok);
   DebuggerStatement* ParseDebuggerStatement(bool* ok);
 
   Expression* ParseExpression(bool accept_IN, bool* ok);
@@ -532,6 +571,21 @@ class Parser {
   Expression* ParseObjectLiteral(bool* ok);
   ObjectLiteral::Property* ParseObjectLiteralGetSet(bool is_getter, bool* ok);
   Expression* ParseRegExpLiteral(bool seen_equal, bool* ok);
+
+  Statement* ParseAwaitStatement(ZoneStringList* labels, bool* ok);
+  Statement* ParseAsyncStatement(ZoneStringList* labels, bool* ok);
+  static void ParseAwaitStatementBeforeCallback(void* data);
+  static void ParseAwaitStatementAfterCallback(ZoneList<Statement*>* body, void* data);
+  void AppendAwaitResume(ZoneList<Statement*>* body, AsyncScope* async_scope, bool do_next = true);
+  Statement* AppendUnresolvedEmptyCall(ZoneList<Statement*>* body, Handle<String> name);
+  Expression* CreateUnresolvedEmptyCall(Handle<String> name);
+  Handle<String> CreateUniqueIdentifier(const char* name);
+  static void DeclareAsyncContinuationCallback(ZoneList<Statement*>* body, void* data);
+  VariableProxy* DeclareAsyncContinuation(Handle<String> await_sync_resume, Handle<String> await_resume, bool* ok);
+  Statement* ParseAsyncDoOrWhileStatement(ZoneStringList* labels, bool* ok, Handle<String> first_run = Handle<String>());
+  Statement* ParseAsyncLoopControlStatement(bool is_break, bool* ok);
+  void DeclareAsyncBreak(AsyncScope async_scope, Expression* wrapped_cond, bool* ok);
+  Expression* WrapAsyncLoopCondition(Expression* cond);
 
   Expression* NewCompareNode(Token::Value op,
                              Expression* x,
@@ -567,7 +621,16 @@ class Parser {
                                         bool name_is_reserved,
                                         int function_token_position,
                                         FunctionLiteral::Type type,
-                                        bool* ok);
+                                        bool* ok,
+                                        bool async_function = false,
+                                        bool parse_params = true,
+                                        bool process_braces = true,
+                                        bool require_lparen = true,
+                                        Token::Value param_end_token = Token::RPAREN,
+                                        Token::Value body_end_token = Token::RBRACE,
+                                        void(*before_body_callback)(void* data) = NULL,
+                                        void(*after_body_callback)(ZoneList<Statement*>* body, void* data) = NULL,
+                                        void* body_callback_data = NULL);
 
 
   // Magical syntax support.
@@ -737,6 +800,10 @@ class Parser {
   // so never lazily compile it.
   bool parenthesized_function_;
   bool harmony_block_scoping_;
+
+  bool async_function_;
+  void* lifting_;
+  AsyncScope* async_scope_;
 
   friend class LexicalScope;
 };
