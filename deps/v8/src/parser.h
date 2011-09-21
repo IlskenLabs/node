@@ -420,24 +420,27 @@ class AsyncScope {
 public:
   AsyncScope()
     : breaked_(false),
-      previous_scope_(NULL),
-      is_try_(false) {
+      previous_scope_(NULL) {
   }
 
   AsyncScope(AsyncScope* previous_scope,
                   Handle<String> continuation,
                   Handle<String> loop_next = Handle<String>(),
                   Handle<String> loop_break = Handle<String>(),
-                  bool is_try = false);
+                  Handle<String> exception = Handle<String>(),
+                  Handle<String> can_finally = Handle<String>());
 
   bool log_break();
   void set_loop_next(Handle<String> loop_next) { loop_next_ = loop_next; }
-  AsyncScope* break_target();
-  AsyncScope* try_target();
+  AsyncScope* break_scope();
+  AsyncScope* try_scope();
+  AsyncScope* previous_scope() { return previous_scope_; }
 
   Handle<String> continuation() { return continuation_; }
   Handle<String> loop_next() { return loop_next_; }
   Handle<String> loop_break() { return loop_break_; }
+  Handle<String> exception() { return exception_; }
+  Handle<String> can_finally() { return can_finally_; }
   bool breaked() { return breaked_; }
 private:
   Handle<String> continuation_;
@@ -448,7 +451,8 @@ private:
 
   AsyncScope* previous_scope_;
 
-  bool is_try_;
+  Handle<String> exception_;
+  Handle<String> can_finally_;
 };
 
 // ----------------------------------------------------------------------------
@@ -576,16 +580,18 @@ class Parser {
   Statement* ParseAsyncStatement(ZoneStringList* labels, bool* ok);
   static void ParseAwaitStatementBeforeCallback(void* data);
   static void ParseAwaitStatementAfterCallback(ZoneList<Statement*>* body, void* data);
-  void AppendAwaitResume(ZoneList<Statement*>* body, AsyncScope* async_scope, bool do_next = true);
+  void AppendAwaitResume(ZoneList<Statement*>* body, AsyncScope* async_scope);
+  void AppendAsyncNext(ZoneList<Statement*>* body, AsyncScope* async_scope);
   Statement* AppendUnresolvedEmptyCall(ZoneList<Statement*>* body, Handle<String> name);
   Expression* CreateUnresolvedEmptyCall(Handle<String> name);
   Handle<String> CreateUniqueIdentifier(const char* name);
   static void DeclareAsyncContinuationCallback(ZoneList<Statement*>* body, void* data);
-  VariableProxy* DeclareAsyncContinuation(Handle<String> await_sync_resume, Handle<String> await_resume, bool* ok);
+  VariableProxy* DeclareAsyncContinuation(Handle<String> sync_continuation, AsyncScope* async_scope, bool* ok);
   Statement* ParseAsyncDoOrWhileStatement(ZoneStringList* labels, bool* ok, Handle<String> first_run = Handle<String>());
   Statement* ParseAsyncLoopControlStatement(bool is_break, bool* ok);
   void DeclareAsyncBreak(AsyncScope async_scope, Expression* wrapped_cond, bool* ok);
   Expression* WrapAsyncLoopCondition(Expression* cond);
+  Statement* CallContinuationStatement(VariableProxy* fvar);
 
   Expression* NewCompareNode(Token::Value op,
                              Expression* x,
