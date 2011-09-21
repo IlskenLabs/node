@@ -716,6 +716,7 @@ FunctionLiteral* Parser::DoParseProgram(Handle<String> source,
           0,
           source->length(),
           FunctionLiteral::ANONYMOUS_EXPRESSION,
+          false,
           false);  // Does not have duplicate parameters.
     } else if (stack_overflow_) {
       isolate()->StackOverflow();
@@ -4705,7 +4706,8 @@ FunctionLiteral* Parser::ParseFunctionLiteral(Handle<String> function_name,
                                   start_pos,
                                   end_pos,
                                   type,
-                                  has_duplicate_parameters);
+                                  has_duplicate_parameters,
+                                  async_function);
   function_literal->set_function_token_position(function_token_position);
 
   if (fni_ != NULL && should_infer_name) fni_->AddFunction(function_literal);
