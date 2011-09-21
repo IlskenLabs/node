@@ -2303,10 +2303,7 @@ Statement* Parser::ParseAsyncLoopControlStatement(bool is_break, bool* ok) {
     Assignment* set = new(zone()) Assignment(isolate(), Token::ASSIGN, breaked, GetLiteralNumber(1), scanner().location().beg_pos);
     result->AddStatement(new(zone()) ExpressionStatement(set));
   }
-  AppendAwaitResume(result->statements(), break_target);
-
-  // tell the callee that this is ending asynchronously to short circuit it
-  result->AddStatement(new(zone()) ReturnStatement(GetLiteralNumber(1)));
+  result->AddStatement(new(zone()) ReturnStatement(CreateUnresolvedEmptyCall(break_target->continuation())));
   return result;
 }
 
