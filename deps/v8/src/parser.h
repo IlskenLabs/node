@@ -585,13 +585,13 @@ class Parser {
   Statement* AppendUnresolvedEmptyCall(ZoneList<Statement*>* body, Handle<String> name);
   Expression* CreateUnresolvedEmptyCall(Handle<String> name);
   Handle<String> CreateUniqueIdentifier(const char* name);
-  static void DeclareAsyncContinuationCallback(ZoneList<Statement*>* body, void* data);
-  VariableProxy* DeclareAsyncContinuation(Handle<String> sync_continuation, AsyncScope* async_scope, bool* ok);
+  VariableProxy* DeclareAsyncContinuation(AsyncScope* async_scope, bool* ok);
   Statement* ParseAsyncDoOrWhileStatement(ZoneStringList* labels, bool* ok, Handle<String> first_run = Handle<String>());
   Statement* ParseAsyncLoopControlStatement(bool is_break, bool* ok);
   void DeclareAsyncBreak(AsyncScope async_scope, Expression* wrapped_cond, bool* ok);
   Expression* WrapAsyncLoopCondition(Expression* cond);
   Statement* CallContinuationStatement(VariableProxy* fvar);
+  void ReturnContinuation(ZoneList<Statement*>* body, AsyncScope* async_scope);
 
   Expression* NewCompareNode(Token::Value op,
                              Expression* x,
