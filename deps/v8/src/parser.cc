@@ -551,13 +551,15 @@ AsyncScope::AsyncScope(AsyncScope* previous_scope,
                   Handle<String> continuation,
                   Handle<String> loop_break,
                   Handle<String> exception,
-                  Handle<String> can_finally)
+                  Handle<String> skip_finally)
                   : continuation_(continuation),
                     loop_break_(loop_break),
                     breaked_(false),
                     previous_scope_(previous_scope),
                     exception_(exception),
-                    can_finally_(can_finally) {
+                    skip_finally_(skip_finally),
+                    has_catch_(false),
+                    has_finally_(false) {
 }
 
 AsyncScope* AsyncScope::break_scope() {
@@ -570,8 +572,6 @@ AsyncScope* AsyncScope::break_scope() {
 
 AsyncScope* AsyncScope::try_scope() {
   if (!exception_.is_null())
-    return this;
-  if (!can_finally_.is_null())
     return this;
   if (!previous_scope_)
     return NULL;
@@ -1436,11 +1436,6 @@ void Parser::ParseAwaitStatementAfterCallback(ZoneList<Statement*>*& body, void*
   if (!parser->async_scope_)
     return;
 
-  AsyncScope* try_scope = parser->async_scope_->try_scope();
-  if (try_scope) {
-    body = new(parser->zone()) ZoneList<Statement*>(4);
-    printf("try scope\n");
-  }
 
   // function pump() {
   //   var _continuation = async_scope->continuation();
@@ -1449,12 +1444,12 @@ void Parser::ParseAwaitStatementAfterCallback(ZoneList<Statement*>*& body, void*
   //   }
   //   while (_continuation);
   // }
-
   Handle<String> continuation = parser->CreateUniqueIdentifier("_continuation");
   VariableProxy* continuation_var = parser->Declare(continuation, Variable::VAR, NULL, true, ad->ok);
   VariableProxy* continuation_var2 = parser->top_scope_->NewUnresolved(continuation, parser->inside_with());
   VariableProxy* continuation_var3 = parser->top_scope_->NewUnresolved(continuation, parser->inside_with());
   VariableProxy* continuation_var4 = parser->top_scope_->NewUnresolved(continuation, parser->inside_with());
+  VariableProxy* continuation_var5 = parser->top_scope_->NewUnresolved(continuation, parser->inside_with());
 
   VariableProxy* func = parser->top_scope_->NewUnresolved(parser->async_scope_->continuation(), parser->inside_with());
   Statement* init = new(parser->zone()) ExpressionStatement(new(parser->zone()) Assignment(parser->isolate(), Token::ASSIGN, continuation_var4, func, parser->scanner().location().beg_pos));
@@ -1468,6 +1463,66 @@ void Parser::ParseAwaitStatementAfterCallback(ZoneList<Statement*>*& body, void*
   loop->Initialize(continuation_var3, assign);
 
   body->Add(init);
+
+  AsyncScope* try_scope = parser->async_scope_->try_scope();
+  if (try_scope) {
+    // this await is exiting, so allow all pending finally blocks to run
+    AsyncScope* async_scope = parser->async_scope_;
+    while (async_scope) {
+      async_scope = async_scope->try_scope();
+      if (async_scope) {
+        VariableProxy* skip_finally = parser->top_scope_->NewUnresolved(async_scope->skip_finally(), parser->inside_with());
+        Expression* assign = new(parser->zone()) Assignment(parser->isolate(), Token::ASSIGN, skip_finally, parser->GetLiteralUndefined(), RelocInfo::kNoPosition);
+        body->InsertAt(0, new(parser->zone()) ExpressionStatement(assign));
+
+        async_scope = async_scope->previous_scope();
+      }
+    }
+
+    // ad this point "body" contains the statements within the function.
+    // let's create a new body with which to wrap in a try catch.
+    body = new(parser->zone()) ZoneList<Statement*>(4);
+
+    TargetCollector catch_collector;
+    Scope* catch_scope = NULL;
+    Variable* catch_variable = NULL;
+    Block* catch_block = new(parser->zone()) Block(parser->isolate(), NULL, 8, true);
+    Handle<String> catch_variable_name = parser->CreateUniqueIdentifier("_catch_var");
+    {
+      Target target(&parser->target_stack_, &catch_collector);
+      catch_scope = parser->NewScope(parser->top_scope_, Scope::CATCH_SCOPE, parser->inside_with());
+      Variable::Mode mode = parser->harmony_block_scoping_ ? Variable::LET : Variable::VAR;
+      catch_variable = catch_scope->DeclareLocal(catch_variable_name, mode);
+      Scope* saved_scope = parser->top_scope_;
+      parser->top_scope_ = catch_scope;
+
+      // catch the exception and send it on up
+      VariableProxy* catch_var = parser->top_scope_->NewUnresolved(catch_variable_name, parser->inside_with());
+      VariableProxy* exception = parser->top_scope_->NewUnresolved(try_scope->exception(), parser->inside_with());
+      Statement* assign = new(parser->zone()) ExpressionStatement(new(parser->zone()) Assignment(parser->isolate(), Token::ASSIGN, exception, catch_var, parser->scanner().location().beg_pos));
+
+      // variable has been saved
+      catch_block->AddStatement(assign);
+      // call the continuation now
+      catch_block->AddStatement(new(parser->zone()) ReturnStatement(parser->CreateUnresolvedEmptyCall(try_scope->continuation())));
+
+      // set up the continuation function for the loop
+      VariableProxy* try_func = parser->top_scope_->NewUnresolved(try_scope->continuation(), parser->inside_with());
+      Statement* reinit = new(parser->zone()) ExpressionStatement(new(parser->zone()) Assignment(parser->isolate(), Token::ASSIGN, continuation_var5, try_func, parser->scanner().location().beg_pos));
+      catch_block->AddStatement(reinit);
+
+      parser->top_scope_ = saved_scope;
+    }
+
+
+    // add the try/catch to the body
+    TryCatchStatement* statement = new(parser->zone()) TryCatchStatement(ad->try_block, catch_scope, catch_variable, catch_block);
+    // statement->set_escaping_targets(try_collector.targets());
+    body->Add(statement);
+  }
+
+  // add the loop at the VERY end so in case an exception is thrown,
+  // the pump var is changed
   body->Add(loop);
 }
 
@@ -1533,6 +1588,20 @@ Statement* Parser::ParseAwaitStatement(ZoneStringList* labels, bool* ok) {
   // is invoked.
   Block* result = new(zone()) Block(isolate(), NULL, 2, false);
   result->AddStatement(data.function_call);
+
+  // prevent all finally blocks encapsulating this await from running.
+  AsyncScope* async_scope = async_scope_;
+  while (async_scope) {
+    async_scope = async_scope->try_scope();
+    if (async_scope) {
+      VariableProxy* skip_finally = top_scope_->NewUnresolved(async_scope->skip_finally(), inside_with());
+      Expression* assign = new(zone()) Assignment(isolate(), Token::ASSIGN, skip_finally, GetLiteralNumber(1), RelocInfo::kNoPosition);
+      result->AddStatement(new(zone()) ExpressionStatement(assign));
+
+      async_scope = async_scope->previous_scope();
+    }
+  }
+  
   result->AddStatement(new(zone()) ReturnStatement(GetLiteralUndefined()));
   return result;
 }
@@ -2483,7 +2552,7 @@ Statement* Parser::ParseThrowStatement(bool* ok) {
 struct AsyncTryData {
   Handle<String> has_run;
   Handle<String> has_caught;
-  Handle<String> can_finally;
+  Handle<String> skip_finally;
   Handle<String> exception;
   AsyncScope* previous_async_scope;
 };
@@ -2503,18 +2572,18 @@ Statement* Parser::ParseTryStatement(bool* ok) {
 
   if (async_function_ && !lifting_) {
     Handle<String> continuation = CreateUniqueIdentifier("_try_resume");
-    AsyncScope* previous_async_scope = async_scope_;
-    AsyncScope async_scope = AsyncScope(previous_async_scope, continuation);
-    async_scope_ = &async_scope;
-
     Handle<String> has_run = CreateUniqueIdentifier("_try_has_run");
     Handle<String> has_caught = CreateUniqueIdentifier("_try_has_caught");
-    Handle<String> can_finally = CreateUniqueIdentifier("_try_can_finally");
+    Handle<String> skip_finally = CreateUniqueIdentifier("_try_skip_finally");
     Handle<String> exception = CreateUniqueIdentifier("_try_exception");
+    AsyncScope* previous_async_scope = async_scope_;
+    AsyncScope async_scope = AsyncScope(previous_async_scope, continuation, Handle<String>(), exception, skip_finally);
+    async_scope_ = &async_scope;
+
     AsyncTryData data;
     data.has_run = has_run;
     data.has_caught = has_caught;
-    data.can_finally = can_finally;
+    data.skip_finally = skip_finally;
     data.exception = exception;
     data.previous_async_scope = previous_async_scope;
     lifting_ = &data;
@@ -2522,17 +2591,14 @@ Statement* Parser::ParseTryStatement(bool* ok) {
     Declare(has_run, Variable::VAR, NULL, false, CHECK_OK);
     Declare(has_caught, Variable::VAR, NULL, false, CHECK_OK);
     Declare(exception, Variable::VAR, NULL, false, CHECK_OK);
+    Declare(skip_finally, Variable::VAR, NULL, false, CHECK_OK);
     
-
     VariableProxy* fvar = DeclareAsyncContinuation(&async_scope, CHECK_OK);
     Statement* stmt = CallContinuationStatement(fvar);
-    
     return stmt;
   }
   AsyncTryData* data = (AsyncTryData*)lifting_;
   lifting_ = NULL;
-
-
 
   Expect(Token::TRY, CHECK_OK);
 
@@ -2615,7 +2681,7 @@ Statement* Parser::ParseTryStatement(bool* ok) {
 
       if (async_function_) {
         // note that this has a catch block
-        async_scope_->set_exception(data->exception);
+        async_scope_->set_has_catch(true);
         // guard against catching two exceptions (need to proceed to the finally)
         VariableProxy* has_caught = top_scope_->NewUnresolved(data->has_caught, inside_with(), scanner().location().beg_pos);
         IfStatement* has_caught_check = new(zone()) IfStatement(isolate(), new(zone()) UnaryOperation(isolate(), Token::NOT, has_caught, scanner().location().beg_pos), catch_block, EmptyStatement());
@@ -2645,7 +2711,7 @@ Statement* Parser::ParseTryStatement(bool* ok) {
 
   if (async_function_) {
     if (tok == Token::FINALLY || catch_block == NULL) {
-      async_scope_->set_can_finally(data->can_finally);
+      async_scope_->set_has_finally(true);
     }
     async_scope_ = data->previous_async_scope;
   }
@@ -2654,6 +2720,14 @@ Statement* Parser::ParseTryStatement(bool* ok) {
   if (tok == Token::FINALLY || catch_block == NULL) {
     Consume(Token::FINALLY);
     finally_block = ParseBlock(NULL, CHECK_OK);
+
+    if (async_function_) {
+      Block* wrapping_block = new(zone()) Block(isolate(), NULL, 2, true);
+      VariableProxy* skip_finally = top_scope_->NewUnresolved(data->skip_finally, inside_with(), scanner().location().beg_pos);
+      IfStatement* skip_finally_check = new(zone()) IfStatement(isolate(), new(zone()) UnaryOperation(isolate(), Token::NOT, skip_finally, scanner().location().beg_pos), finally_block, EmptyStatement());
+      wrapping_block->AddStatement(skip_finally_check);
+      finally_block = wrapping_block;
+    }
   }
 
   // Simplify the AST nodes by converting:

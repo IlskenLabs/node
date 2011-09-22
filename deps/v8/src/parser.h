@@ -427,7 +427,7 @@ public:
                   Handle<String> continuation,
                   Handle<String> loop_break = Handle<String>(),
                   Handle<String> exception = Handle<String>(),
-                  Handle<String> can_finally = Handle<String>());
+                  Handle<String> skip_finally = Handle<String>());
 
   bool log_break();
   AsyncScope* break_scope();
@@ -438,8 +438,11 @@ public:
   Handle<String> loop_break() { return loop_break_; }
   Handle<String> exception() { return exception_; }
   void set_exception(Handle<String> exception) { exception_ = exception; }
-  void set_can_finally(Handle<String> can_finally) { can_finally_ = can_finally; }
-  Handle<String> can_finally() { return can_finally_; }
+  void set_has_catch(bool has_catch) { has_catch_ = has_catch; }
+  void set_has_finally(bool has_finally) { has_finally_ = has_finally; }
+  bool has_catch() { return has_catch_; }
+  bool has_finally() { return has_finally_; }
+  Handle<String> skip_finally() { return skip_finally_; }
   bool breaked() { return breaked_; }
 private:
   Handle<String> continuation_;
@@ -451,8 +454,9 @@ private:
 
   // variable in use by the catch block
   Handle<String> exception_;
-  // designates whether there is a finally block
-  Handle<String> can_finally_;
+  Handle<String> skip_finally_;
+  bool has_catch_;
+  bool has_finally_;
 };
 
 // ----------------------------------------------------------------------------
