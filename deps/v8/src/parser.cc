@@ -549,12 +549,10 @@ LexicalScope::~LexicalScope() {
 
 AsyncScope::AsyncScope(AsyncScope* previous_scope,
                   Handle<String> continuation,
-                  Handle<String> loop_next,
                   Handle<String> loop_break,
                   Handle<String> exception,
                   Handle<String> can_finally)
                   : continuation_(continuation),
-                    loop_next_(loop_next),
                     loop_break_(loop_break),
                     breaked_(false),
                     previous_scope_(previous_scope),
@@ -2713,7 +2711,7 @@ Statement* Parser::ParseAsyncDoOrWhileStatement(ZoneStringList* labels, bool* ok
   Handle<String> continuation = CreateUniqueIdentifier("_while_resume");
   Handle<String> loop_break = CreateUniqueIdentifier("_while_break");
 
-  AsyncScope async_scope = AsyncScope(previous_async_scope, continuation, Handle<String>(), loop_break);
+  AsyncScope async_scope = AsyncScope(previous_async_scope, continuation, loop_break);
   async_scope_ = &async_scope;
   
   Block* result = new(zone()) Block(isolate(), labels, 4, false);
@@ -2949,7 +2947,7 @@ Statement* Parser::ParseForStatement(ZoneStringList* labels, bool* ok) {
     Handle<String> loop_next = await_for_data.loop_next = CreateUniqueIdentifier("_for_next");
     // don't set the loop_next for the async scope, as there may not be a increment
     // in the loop
-    AsyncScope async_scope = AsyncScope(previous_async_scope, continuation, Handle<String>(), loop_break);
+    AsyncScope async_scope = AsyncScope(previous_async_scope, continuation, loop_break);
     async_scope_ = &async_scope;
 
     Block* result = new(zone()) Block(isolate(), labels, 4, false);
@@ -3104,7 +3102,7 @@ Statement* Parser::ParseForStatement(ZoneStringList* labels, bool* ok) {
       // create a new scope that includes this next function
 //      printf("loop has async next thing %d\n", data->await_next.is_null());
 //      async_scope_ = AsyncScope(async_scope_, async_scope_.continuation(), data->await_next, async_scope_.loop_break());
-      async_scope_->set_loop_next(data->loop_next);
+      //async_scope_->set_loop_next(data->loop_next);
     }
     init = NULL;
     data->init_name = name;

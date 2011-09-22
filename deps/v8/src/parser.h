@@ -425,19 +425,16 @@ public:
 
   AsyncScope(AsyncScope* previous_scope,
                   Handle<String> continuation,
-                  Handle<String> loop_next = Handle<String>(),
                   Handle<String> loop_break = Handle<String>(),
                   Handle<String> exception = Handle<String>(),
                   Handle<String> can_finally = Handle<String>());
 
   bool log_break();
-  void set_loop_next(Handle<String> loop_next) { loop_next_ = loop_next; }
   AsyncScope* break_scope();
   AsyncScope* try_scope();
   AsyncScope* previous_scope() { return previous_scope_; }
 
   Handle<String> continuation() { return continuation_; }
-  Handle<String> loop_next() { return loop_next_; }
   Handle<String> loop_break() { return loop_break_; }
   Handle<String> exception() { return exception_; }
   void set_exception(Handle<String> exception) { exception_ = exception; }
@@ -446,7 +443,6 @@ public:
   bool breaked() { return breaked_; }
 private:
   Handle<String> continuation_;
-  Handle<String> loop_next_;
 
   Handle<String> loop_break_;
   bool breaked_;
