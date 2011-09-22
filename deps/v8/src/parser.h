@@ -440,6 +440,8 @@ public:
   Handle<String> loop_next() { return loop_next_; }
   Handle<String> loop_break() { return loop_break_; }
   Handle<String> exception() { return exception_; }
+  void set_exception(Handle<String> exception) { exception_ = exception; }
+  void set_can_finally(Handle<String> can_finally) { can_finally_ = can_finally; }
   Handle<String> can_finally() { return can_finally_; }
   bool breaked() { return breaked_; }
 private:
@@ -451,7 +453,9 @@ private:
 
   AsyncScope* previous_scope_;
 
+  // variable in use by the catch block
   Handle<String> exception_;
+  // designates whether there is a finally block
   Handle<String> can_finally_;
 };
 
@@ -578,10 +582,8 @@ class Parser {
 
   Statement* ParseAwaitStatement(ZoneStringList* labels, bool* ok);
   Statement* ParseAsyncStatement(ZoneStringList* labels, bool* ok);
-  static void ParseAwaitStatementBeforeCallback(void* data);
-  static void ParseAwaitStatementAfterCallback(ZoneList<Statement*>* body, void* data);
-  void AppendAwaitResume(ZoneList<Statement*>* body, AsyncScope* async_scope);
-  void AppendAsyncNext(ZoneList<Statement*>* body, AsyncScope* async_scope);
+  static void ParseAwaitStatementBeforeCallback(ZoneList<Statement*>*& body, void* data);
+  static void ParseAwaitStatementAfterCallback(ZoneList<Statement*>*& body, void* data);
   Statement* AppendUnresolvedEmptyCall(ZoneList<Statement*>* body, Handle<String> name);
   Expression* CreateUnresolvedEmptyCall(Handle<String> name);
   Handle<String> CreateUniqueIdentifier(const char* name);
@@ -634,8 +636,8 @@ class Parser {
                                         bool require_lparen = true,
                                         Token::Value param_end_token = Token::RPAREN,
                                         Token::Value body_end_token = Token::RBRACE,
-                                        void(*before_body_callback)(void* data) = NULL,
-                                        void(*after_body_callback)(ZoneList<Statement*>* body, void* data) = NULL,
+                                        void(*before_body_callback)(ZoneList<Statement*>*& body, void* data) = NULL,
+                                        void(*after_body_callback)(ZoneList<Statement*>*& body, void* data) = NULL,
                                         void* body_callback_data = NULL);
 
 
