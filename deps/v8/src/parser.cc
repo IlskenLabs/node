@@ -1430,7 +1430,6 @@ void Parser::ParseAwaitStatementAfterCallbackStatic(ZoneList<Statement*>*& body,
 
 void Parser::ParseAwaitStatementAfterCallback(ZoneList<Statement*>*& body, void* data) {
   AwaitData* ad = (AwaitData*)data;
-  Parser* parser = ad->parser;
   bool* ok = ad->ok;
 
   // lift everything after the await as the callback function
@@ -1559,9 +1558,6 @@ void Parser::ParseAwaitStatementAfterCallback(ZoneList<Statement*>*& body, void*
   }
   else {
     VariableProxy* continuation_var5 = top_scope_->NewUnresolved(continuation, inside_with());
-    VariableProxy* continuation_var6 = top_scope_->NewUnresolved(continuation, inside_with());
-    ZoneList<Expression*>* empty = new(zone()) ZoneList<Expression*>(0);
-    Expression* call_continuation = NewCall(continuation_var6, empty, scanner().location().beg_pos);
     Statement* first_assign = new(zone()) ExpressionStatement(new(zone()) Assignment(isolate(), Token::ASSIGN, continuation_var5, func_var, scanner().location().beg_pos));
     body->Add(first_assign);
   }
@@ -2396,7 +2392,6 @@ Statement* Parser::ParseAsyncLoopControlStatement(bool is_break, bool* ok) {
   VariableProxy* continuation = top_scope_->NewUnresolved(break_target->continuation(), inside_with(), scanner().location().beg_pos);
   Statement* return_continuation = new(zone()) ReturnStatement(continuation);
 
-  VariableProxy* continuation2 = top_scope_->NewUnresolved(break_target->continuation(), inside_with(), scanner().location().beg_pos);
   result->AddStatement(return_continuation);
 
   // result->AddStatement(new(zone()) ReturnStatement(CreateUnresolvedEmptyCall(break_target->continuation())));
@@ -3028,15 +3023,11 @@ void Parser::DeclareAsyncContinuationAfterCallbackStatic(ZoneList<Statement*>*& 
 
 void Parser::DeclareAsyncContinuationAfterCallback(ZoneList<Statement*>*& body, void* data) {
   AsyncContinuationData* ad = (AsyncContinuationData*)data;
-  bool* ok = ad->ok;
   AsyncScope* try_scope = ad->try_scope;
   Handle<String> continuation = ad->continuation;
 
   // wrap the sync call
   {
-    Handle<String> try_continuation = CreateUniqueIdentifier("_continuation");
-    VariableProxy* try_continuation_var = Declare(try_continuation, Variable::VAR, NULL, true, ok);
-
     Block* try_block = new(zone()) Block(isolate(), NULL, 4, true);
     // try to return the normal continuation
     try_block->AddStatement(new(zone()) ReturnStatement(CreateUnresolvedEmptyCall(continuation)));
