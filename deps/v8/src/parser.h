@@ -583,7 +583,8 @@ class Parser {
   Statement* ParseAwaitStatement(ZoneStringList* labels, bool* ok);
   Statement* ParseAsyncStatement(ZoneStringList* labels, bool* ok);
   static void ParseAwaitStatementBeforeCallback(ZoneList<Statement*>*& body, void* data);
-  static void ParseAwaitStatementAfterCallback(ZoneList<Statement*>*& body, void* data);
+  static void ParseAwaitStatementAfterCallbackStatic(ZoneList<Statement*>*& body, void* data);
+  void ParseAwaitStatementAfterCallback(ZoneList<Statement*>*& body, void* data);
   Statement* AppendUnresolvedEmptyCall(ZoneList<Statement*>* body, Handle<String> name);
   Expression* CreateUnresolvedEmptyCall(Handle<String> name);
   Handle<String> CreateUniqueIdentifier(const char* name);
@@ -594,6 +595,9 @@ class Parser {
   Expression* WrapAsyncLoopCondition(Expression* cond);
   Statement* CallContinuationStatement(VariableProxy* fvar);
   void ReturnContinuation(ZoneList<Statement*>* body, AsyncScope* async_scope);
+  static void DeclareAsyncContinuationAfterCallbackStatic(ZoneList<Statement*>*& body, void* data);
+  void DeclareAsyncContinuationAfterCallback(ZoneList<Statement*>*& body, void* data);
+  Statement* DebugBreak(const char* name = "debug_break");
 
   Expression* NewCompareNode(Token::Value op,
                              Expression* x,
@@ -634,6 +638,7 @@ class Parser {
                                         bool parse_params = true,
                                         bool process_braces = true,
                                         bool require_lparen = true,
+                                        bool parse_body = true,
                                         Token::Value param_end_token = Token::RPAREN,
                                         Token::Value body_end_token = Token::RBRACE,
                                         void(*before_body_callback)(ZoneList<Statement*>*& body, void* data) = NULL,
