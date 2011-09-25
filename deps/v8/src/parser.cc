@@ -496,6 +496,7 @@ class LexicalScope BASE_EMBEDDED {
 
   void AddProperty() { expected_property_count_++; }
   int expected_property_count() { return expected_property_count_; }
+  LexicalScope* previous_scope() { return lexical_scope_parent_; }
 
  private:
   // Captures the number of literals that need materialization in the
@@ -1388,7 +1389,13 @@ struct AwaitData {
 void Parser::ParseAwaitStatementBeforeCallback(ZoneList<Statement*>*& body, void* data) {
   AwaitData* ad = (AwaitData*)data;
   Parser* parser = ad->parser;
+  Scope* fscope = parser->top_scope_;
+  LexicalScope* lscope = parser->lexical_scope_;
+  parser->top_scope_ = parser->top_scope_->outer_scope();
+  parser->lexical_scope_ = parser->lexical_scope_->previous_scope();
   ad->function_call = ad->parser->ParseExpressionOrLabelledStatement(ad->labels, ad->ok);
+  parser->top_scope_ = fscope;
+  parser->lexical_scope_ = lscope;
 
   return;
 
