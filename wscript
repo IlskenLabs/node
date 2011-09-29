@@ -272,6 +272,9 @@ def configure(conf):
 
   conf.env["USE_GDBJIT"] = o.use_gdbjit
 
+  if not conf.env["USE_SHARED_ZLIB"] and not sys.platform.startswith("win32"):
+    conf.env.append_value("LINKFLAGS", "-lz")
+
   conf.check(lib='dl', uselib_store='DL')
   if not sys.platform.startswith("sunos") and not sys.platform.startswith("cygwin") and not sys.platform.startswith("win32"):
     conf.env.append_value("CCFLAGS", "-rdynamic")
@@ -644,9 +647,11 @@ def uv_cmd(bld, variant):
   #
   cmd = 'cp -r ' + sh_escape(srcdir)  + '/* ' + sh_escape(blddir)
   if not sys.platform.startswith('win32'):
-    cmd += ' && if [[ -z "$NODE_MAKE" ]]; then NODE_MAKE=make; fi; $NODE_MAKE -C ' + sh_escape(blddir)
+    cmd += ' && if [[ -z "$NODE_MAKE" ]]; then NODE_MAKE=make; fi; '
+    cmd += '$NODE_MAKE -C ' + sh_escape(blddir)
   else:
     cmd += ' && make -C ' + sh_escape(blddir)
+  cmd += ' clean all'
   return cmd
 
 
@@ -889,6 +894,8 @@ def build(bld):
     src/pipe_wrap.cc
     src/cares_wrap.cc
     src/stdio_wrap.cc
+    src/tty_wrap.cc
+    src/fs_event_wrap.cc
     src/process_wrap.cc
     src/v8_typed_array.cc
   """

@@ -19,39 +19,52 @@
 // OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
 // USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+var common = require('../common');
+var assert = require('assert');
 
-NODE_EXT_LIST_START
-NODE_EXT_LIST_ITEM(node_buffer)
-#ifdef __POSIX__
-NODE_EXT_LIST_ITEM(node_cares)
-NODE_EXT_LIST_ITEM(node_child_process)
-#endif
-#if HAVE_OPENSSL
-NODE_EXT_LIST_ITEM(node_crypto)
-#endif
-NODE_EXT_LIST_ITEM(node_evals)
-NODE_EXT_LIST_ITEM(node_fs)
-#ifdef __POSIX__
-NODE_EXT_LIST_ITEM(node_net)
-#endif
-NODE_EXT_LIST_ITEM(node_http_parser)
-#ifdef __POSIX__
-NODE_EXT_LIST_ITEM(node_signal_watcher)
-#endif
-NODE_EXT_LIST_ITEM(node_stdio)
-NODE_EXT_LIST_ITEM(node_os)
-NODE_EXT_LIST_ITEM(node_zlib)
+try {
+  var crypto = require('crypto');
+} catch (e) {
+  console.log('Not compiled with OPENSSL support.');
+  process.exit();
+}
 
-// libuv rewrite
-NODE_EXT_LIST_ITEM(node_timer_wrap)
-NODE_EXT_LIST_ITEM(node_tcp_wrap)
-NODE_EXT_LIST_ITEM(node_udp_wrap)
-NODE_EXT_LIST_ITEM(node_pipe_wrap)
-NODE_EXT_LIST_ITEM(node_cares_wrap)
-NODE_EXT_LIST_ITEM(node_stdio_wrap)
-NODE_EXT_LIST_ITEM(node_tty_wrap)
-NODE_EXT_LIST_ITEM(node_process_wrap)
-NODE_EXT_LIST_ITEM(node_fs_event_wrap)
+// bump, we register a lot of exit listeners
+process.setMaxListeners(256);
 
-NODE_EXT_LIST_END
+[ crypto.randomBytes,
+  crypto.pseudoRandomBytes
+].forEach(function(f) {
+  [ -1,
+    undefined,
+    null,
+    false,
+    true,
+    {},
+    []
+  ].forEach(function(value) {
+    assert.throws(function() { f(value); });
+    assert.throws(function() { f(value, function(){}); });
+  });
 
+  [0, 1, 2, 4, 16, 256, 1024].forEach(function(len) {
+    f(len, checkCall(function(ex, buf) {
+      assert.equal(null, ex);
+      assert.equal(len, buf.length);
+      assert.ok(Buffer.isBuffer(buf));
+    }));
+  });
+});
+
+// assert that the callback is indeed called
+function checkCall(cb, desc) {
+  var called_ = false;
+
+  process.on('exit', function() {
+    assert.equal(true, called_, desc || ('callback not called: ' + cb));
+  });
+
+  return function() {
+    return called_ = true, cb.apply(cb, Array.prototype.slice.call(arguments));
+  };
+}
