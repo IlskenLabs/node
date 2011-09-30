@@ -3016,6 +3016,51 @@ Handle<String> Parser::CreateUniqueIdentifier(const char* name) {
   return isolate()->factory()->LookupAsciiSymbol(sym);
 }
 
+FunctionLiteral* Parser::CreateEmptyFunctionLiteral(Handle<String> function_name) {
+  FunctionLiteral* func;
+  FunctionLiteral::Type type = FunctionLiteral::DECLARATION;
+  bool should_infer_name = function_name.is_null();
+  // We want a non-null handle as the function name.
+  if (should_infer_name) {
+    function_name = isolate()->factory()->empty_symbol();
+    type = FunctionLiteral::ANONYMOUS_EXPRESSION;
+  }
+
+  Scope* scope = (type == FunctionLiteral::DECLARATION &&
+                  !harmony_block_scoping_)
+      ? NewScope(top_scope_->DeclarationScope(), Scope::FUNCTION_SCOPE, false)
+      : NewScope(top_scope_, Scope::FUNCTION_SCOPE, inside_with());
+
+  LexicalScope lexical_scope(this, scope, isolate());
+  top_scope_->SetScopeName(function_name);
+
+  int start_pos = scanner().location().beg_pos;
+  int end_pos = scanner().location().beg_pos;
+
+  // create the continuation pump function
+  ZoneList<Statement*>* body = new(zone()) ZoneList<Statement*>(8);
+  func = new(zone()) FunctionLiteral(isolate(),
+                                  function_name,
+                                  scope,
+                                  body,
+                                  lexical_scope.materialized_literal_count(),
+                                  lexical_scope.expected_property_count(),
+                                  lexical_scope.only_simple_this_property_assignments(),
+                                  lexical_scope.this_property_assignments(),
+                                  0,
+                                  start_pos,
+                                  end_pos,
+                                  type,
+                                  false,
+                                  false);
+
+  if (fni_ != NULL && should_infer_name) fni_->AddFunction(func);
+
+  func->set_function_token_position(start_pos);
+
+  return func;
+}
+
 
 VariableProxy* Parser::DeclareAsyncContinuation(AsyncScope* async_scope, bool* ok) {
   Handle<String> continuation = async_scope->continuation();
@@ -3038,7 +3083,7 @@ VariableProxy* Parser::DeclareAsyncContinuation(AsyncScope* async_scope, bool* o
   if (!try_scope) {
     return continuation_var;
   }
-  
+
   FunctionLiteral* async_func;
   {
     FunctionLiteral::Type type = FunctionLiteral::DECLARATION;
@@ -3049,7 +3094,7 @@ VariableProxy* Parser::DeclareAsyncContinuation(AsyncScope* async_scope, bool* o
       function_name = isolate()->factory()->empty_symbol();
       type = FunctionLiteral::ANONYMOUS_EXPRESSION;
     }
-    
+
     Scope* scope = (type == FunctionLiteral::DECLARATION &&
                     !harmony_block_scoping_)
         ? NewScope(top_scope_->DeclarationScope(), Scope::FUNCTION_SCOPE, false)
@@ -3057,7 +3102,7 @@ VariableProxy* Parser::DeclareAsyncContinuation(AsyncScope* async_scope, bool* o
 
     LexicalScope lexical_scope(this, scope, isolate());
     top_scope_->SetScopeName(function_name);
-  
+
     int start_pos = scanner().location().beg_pos;
     int end_pos = scanner().location().beg_pos;
 
@@ -3164,17 +3209,7 @@ Statement* Parser::ParseForStatement(ZoneStringList* labels, bool* ok) {
       result->AddStatement(await_for_data.init);
 
     if (await_for_data.next != NULL) {
-      // create an empty func to house the next
-      FunctionLiteral* next_func = ParseFunctionLiteral(loop_next,
-                                    false,
-                                    scanner().location().beg_pos,
-                                    FunctionLiteral::DECLARATION,
-                                    ok,
-                                    false,
-                                    false,
-                                    false,
-                                    false);
-
+      FunctionLiteral* next_func = CreateEmptyFunctionLiteral(loop_next);
       ZoneList<Statement*>* body = next_func->body();
       // add the next expression
       if (async_scope.breaked())
