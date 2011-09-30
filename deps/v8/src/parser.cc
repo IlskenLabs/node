@@ -1890,7 +1890,6 @@ Statement* Parser::ParseFunctionDeclaration(bool* ok) {
                                               FunctionLiteral::DECLARATION,
                                               async_function,
                                               CHECK_OK);
-  if (!*ok) return NULL;
   // Even if we're not at the top-level of the global or a function
   // scope, we treat is as such and introduce the function with it's
   // initial value upon entering the corresponding scope.
