@@ -591,9 +591,6 @@ class Parser {
   void DeclareAsyncBreak(AsyncScope async_scope, Expression* wrapped_cond, bool* ok);
   Expression* WrapAsyncLoopCondition(Expression* cond);
   Statement* CallContinuationStatement(VariableProxy* fvar);
-  void ReturnContinuation(ZoneList<Statement*>* body, AsyncScope* async_scope);
-  static void DeclareAsyncContinuationAfterCallbackStatic(ZoneList<Statement*>*& body, void* data);
-  void DeclareAsyncContinuationAfterCallback(ZoneList<Statement*>*& body, void* data);
   Statement* DebugBreak(const char* name = "debug_break");
   FunctionLiteral* LiftContinuation(Handle<String> function_name, AsyncScope* previous_async_scope, bool* ok);
   TryCatchStatement* WrapContinuation(Handle<String> continuation, Handle<String> next_continuation, AsyncScope* try_scope);
