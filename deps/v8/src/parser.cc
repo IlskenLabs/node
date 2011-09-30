@@ -1375,43 +1375,6 @@ Statement* Parser::ParseStatement(ZoneStringList* labels, bool* ok) {
 }
 
 
-struct AwaitData {
-  Parser* parser;
-  Statement* function_call;
-  ZoneStringList* labels;
-  Block* try_block;
-  bool* ok;
-  Handle<String> continuation;
-  Handle<String> parameters[10];
-  Scope* scope;
-};
-
-void Parser::ParseAwaitStatementBeforeCallback(ZoneList<Statement*>*& body, void* data) {
-  AwaitData* ad = (AwaitData*)data;
-  Parser* parser = ad->parser;
-  Scope* fscope = parser->top_scope_;
-  LexicalScope* lscope = parser->lexical_scope_;
-  parser->top_scope_ = parser->top_scope_->outer_scope();
-  parser->lexical_scope_ = parser->lexical_scope_->previous_scope();
-  ad->function_call = ad->parser->ParseExpressionOrLabelledStatement(ad->labels, ad->ok);
-  parser->top_scope_ = fscope;
-  parser->lexical_scope_ = lscope;
-
-  return;
-
-  if (!parser->async_scope_)
-    return;
-
-  AsyncScope* try_scope = parser->async_scope_->try_scope();
-  if (!try_scope)
-    return;
-
-  // parse everything into the try block instead, delete the old body
-  ad->try_block = new(parser->zone()) Block(parser->isolate(), NULL, 8, true);
-  delete body;
-  body = ad->try_block->statements();
-}
-
 Expression* Parser::CreateUnresolvedEmptyCall(Handle<String> name) {
   if (fni_ != NULL) fni_->PushVariableName(name);
   VariableProxy* func = top_scope_->NewUnresolved(name,
@@ -1429,166 +1392,59 @@ Statement* Parser::AppendUnresolvedEmptyCall(ZoneList<Statement*>* body, Handle<
   return ret;
 }
 
-void Parser::ParseAwaitStatementAfterCallbackStatic(ZoneList<Statement*>*& body, void* data) {
-  AwaitData* ad = (AwaitData*)data;
-  Parser* parser = ad->parser;
-  parser->ParseAwaitStatementAfterCallback(body, data);
-}
 
-void Parser::ParseAwaitStatementAfterCallback(ZoneList<Statement*>*& body, void* data) {
-  AwaitData* ad = (AwaitData*)data;
-  bool* ok = ad->ok;
+FunctionLiteral* Parser::LiftContinuation(Handle<String> function_name, AsyncScope* previous_async_scope, bool* ok) {
+  FunctionLiteral::Type type = FunctionLiteral::DECLARATION;
+  bool should_infer_name = function_name.is_null();
 
-  // lift everything after the await as the callback function
-  FunctionLiteral* func = ParseFunctionLiteral(ad->continuation,
-                                                false,
-                                                scanner().location().beg_pos,
-                                                FunctionLiteral::DECLARATION,
-                                                ok,
-                                                true,
-                                                false,
-                                                false,
-                                                false);
-
-
-  VariableProxy* func_var = Declare(ad->continuation, Variable::VAR, func, true, ok);
-  if (async_scope_) {
-    ZoneList<Statement*>* body = func->body();
-    // AsyncScope* previous_async_scope = async_scope->previous_scope();
-    if (async_scope_) {
-      body->Add(new(zone()) ReturnStatement(CreateUnresolvedEmptyCall(async_scope_->continuation())));
-    }
-    else {
-      body->Add(new(zone()) ReturnStatement(GetLiteralUndefined()));
-    }
+  // We want a non-null handle as the function name.
+  if (should_infer_name) {
+    function_name = isolate()->factory()->empty_symbol();
+    type = FunctionLiteral::ANONYMOUS_EXPRESSION;
   }
 
-  // add a continuation pump to the end to the end of every await block.
-  // though it will not actually be called, if there are two awaits in a row:
-  // code block -> 
-  // await ->
-  // return ->
-  //    await block ->
-  //    await 2 ->
-  //    return 2 ->
-  //       await block 2 ->
-  //       continuation pump 2 ->
-  //    continuation pump
+  Scope* scope = (type == FunctionLiteral::DECLARATION &&
+                  !harmony_block_scoping_)
+      ? NewScope(top_scope_->DeclarationScope(), Scope::FUNCTION_SCOPE, false)
+      : NewScope(top_scope_, Scope::FUNCTION_SCOPE, inside_with());
+    
+  LexicalScope lexical_scope(this, scope, isolate());
+  top_scope_->SetScopeName(function_name);
 
-  // function pump() {
-  //   var _continuation = async_scope->continuation();
-  //   do {
-  //     _continuation = _continuation();
-  //   }
-  //   while (_continuation);
-  // }
-  Handle<String> continuation = ad->continuation;
-  VariableProxy* continuation_var = top_scope_->NewUnresolved(continuation, inside_with());
-  VariableProxy* continuation_var2 = top_scope_->NewUnresolved(continuation, inside_with());
-  VariableProxy* continuation_var3 = top_scope_->NewUnresolved(continuation, inside_with());
-
-  ZoneList<Expression*>* first_args = new(zone()) ZoneList<Expression*>(4);
-  for (int i = 0; i < top_scope_->num_parameters(); i++) {
-    first_args->Add(top_scope_->NewUnresolved(top_scope_->parameter(i)->name(), inside_with()));
-  }
-
-  AsyncScope* async_scope = async_scope_;
-  AsyncScope* try_scope = NULL;
-  if (async_scope)
-    try_scope = async_scope->try_scope();
-
-  // if this await is inside a try block, make sure we bubble the exceptions up
-  if (try_scope) {
-    // reset all the finally watchers
-    while (try_scope) {
-      // the first loop through, this will return itself
-      try_scope = try_scope->try_scope();
-      if (try_scope) {
-        VariableProxy* skip_finally = top_scope_->NewUnresolved(try_scope->skip_finally(), inside_with());
-        Expression* assign = new(zone()) Assignment(isolate(), Token::ASSIGN, skip_finally, GetLiteralUndefined(), RelocInfo::kNoPosition);
-        body->InsertAt(0, new(zone()) ExpressionStatement(assign));
+  ZoneList<Statement*>* body = new(zone()) ZoneList<Statement*>(8);
+  int start_pos = scanner().location().beg_pos;
+  ParseSourceElements(body, Token::RBRACE, CHECK_OK);
+  int end_pos = scanner().location().beg_pos;
   
-        try_scope = try_scope->previous_scope();
-      }
-    }
+  FunctionLiteral* continuation_func =
+      new(zone()) FunctionLiteral(isolate(),
+                                  function_name,
+                                  scope,
+                                  body,
+                                  lexical_scope.materialized_literal_count(),
+                                  lexical_scope.expected_property_count(),
+                                  lexical_scope.only_simple_this_property_assignments(),
+                                  lexical_scope.this_property_assignments(),
+                                  0,
+                                  start_pos,
+                                  end_pos,
+                                  type,
+                                  false,
+                                  async_function_);
 
-    // reset the try scope
-    try_scope = async_scope->try_scope();
-
-    // create try catch for the continuation call and assignment
-    TargetCollector catch_collector;
-    Scope* catch_scope = NULL;
-    Variable* catch_variable = NULL;
-    Block* catch_block = new(zone()) Block(isolate(), NULL, 8, true);
-    Handle<String> catch_variable_name = CreateUniqueIdentifier("_catch_var");
-    {
-      Target target(&target_stack_, &catch_collector);
-      catch_scope = NewScope(top_scope_, Scope::CATCH_SCOPE, inside_with());
-      Variable::Mode mode = harmony_block_scoping_ ? Variable::LET : Variable::VAR;
-      catch_variable = catch_scope->DeclareLocal(catch_variable_name, mode);
-      Scope* saved_scope = top_scope_;
-      top_scope_ = catch_scope;
-  
-      // catch the exception and send it on up
-      VariableProxy* catch_var = top_scope_->NewUnresolved(catch_variable_name, inside_with());
-      VariableProxy* exception = top_scope_->NewUnresolved(try_scope->exception(), inside_with());
-      Statement* assign = new(zone()) ExpressionStatement(new(zone()) Assignment(isolate(), Token::ASSIGN, exception, catch_var, scanner().location().beg_pos));
-  
-      // save the exception variable
-      catch_block->AddStatement(assign);
-  
-      // exception is saved, so let's set up the continuation that the await pump should use
-      VariableProxy* try_func = top_scope_->NewUnresolved(try_scope->continuation(), inside_with());
-      VariableProxy* continuation_var4 = top_scope_->NewUnresolved(continuation, inside_with());
-      Statement* reinit = new(zone()) ExpressionStatement(new(zone()) Assignment(isolate(), Token::ASSIGN, continuation_var4, try_func, scanner().location().beg_pos));
-      catch_block->AddStatement(reinit);
-  
-      top_scope_ = saved_scope;
-    }
-  
-  
-    // add the try/catch to the body
-    Block* try_block = new(zone()) Block(isolate(), NULL, 8, true);
-
-    VariableProxy* continuation_var5 = top_scope_->NewUnresolved(continuation, inside_with());
-    VariableProxy* continuation_var6 = top_scope_->NewUnresolved(continuation, inside_with());
-    ZoneList<Expression*>* empty = new(zone()) ZoneList<Expression*>(0);
-    Expression* call_continuation = NewCall(continuation_var6, empty, scanner().location().beg_pos);
-    Statement* first_assign = new(zone()) ExpressionStatement(new(zone()) Assignment(isolate(), Token::ASSIGN, continuation_var5, call_continuation, scanner().location().beg_pos));
-
-    try_block->AddStatement(first_assign);
-
-
-    TryCatchStatement* statement = new(zone()) TryCatchStatement(try_block, catch_scope, catch_variable, catch_block);
-    // statement->set_escaping_targets(try_collector.targets());
-    body->Add(statement);
+  if (previous_async_scope) {
+    VariableProxy* previous_continuation = top_scope_->NewUnresolved(previous_async_scope->continuation(), inside_with());
+    continuation_func->body()->Add(new(zone()) ReturnStatement(previous_continuation));
   }
   else {
-    VariableProxy* continuation_var5 = top_scope_->NewUnresolved(continuation, inside_with());
-    Statement* first_assign = new(zone()) ExpressionStatement(new(zone()) Assignment(isolate(), Token::ASSIGN, continuation_var5, func_var, scanner().location().beg_pos));
-    body->Add(first_assign);
+    continuation_func->body()->Add(new(zone()) ReturnStatement(GetLiteralUndefined()));
   }
 
-
-  ZoneList<Expression*>* args = new(zone()) ZoneList<Expression*>(0);
-  Expression* call_continuation = NewCall(continuation_var, args, scanner().location().beg_pos);
-
-  WhileStatement* loop = new(zone()) WhileStatement(isolate(), ad->labels);
-  Block* while_block;
-
-  {
-    Target target(&target_stack_, loop);
-    while_block = new(zone()) Block(isolate(), NULL, 8, true);
-    Statement* assign = new(zone()) ExpressionStatement(new(zone()) Assignment(isolate(), Token::ASSIGN, continuation_var2, call_continuation, scanner().location().beg_pos));
-    while_block->AddStatement(assign);
-  }
-
-  loop->Initialize(continuation_var3, while_block);
-
-  // add the loop at the VERY end so in case an exception is thrown,
-  // the pump var is changed
-  body->Add(loop);
+  if (fni_ != NULL && should_infer_name) fni_->AddFunction(continuation_func);
+  continuation_func->set_function_token_position(start_pos);
+  return continuation_func;
 }
+
 
 Statement* Parser::ParseAwaitStatement(ZoneStringList* labels, bool* ok) {
   // AwaitStatement ::
@@ -1604,35 +1460,28 @@ Statement* Parser::ParseAwaitStatement(ZoneStringList* labels, bool* ok) {
     return NULL;
   }
 
-  // anonymous function
-  Handle<String> continuation = CreateUniqueIdentifier("await_body");
-  AwaitData data;
-  data.parser = this;
-  data.ok = ok;
-  data.labels = labels;
-  data.continuation = continuation;
 
-  Handle<String> await_pump;// = CreateUniqueIdentifier("await_pump");
-  FunctionLiteral* pump_func = ParseFunctionLiteral(await_pump,
-                                                false,
-                                                scanner().location().beg_pos,
-                                                FunctionLiteral::ANONYMOUS_EXPRESSION,
-                                                ok,
-                                                false,
-                                                true,
-                                                false,
-                                                false,
-                                                false,
-                                                Token::ASSIGN,
-                                                Token::ASSIGN,
-                                                ParseAwaitStatementBeforeCallback,
-                                                ParseAwaitStatementAfterCallbackStatic,
-                                                &data);
+  ZoneStringList parameter_names(4);
+  bool parameter_found = false;
+  while (peek() == Token::IDENTIFIER) {
+    parameter_found = true;
+    Handle<String> param_name = ParseIdentifier(CHECK_OK);
+    parameter_names.Add(param_name);
+    if (peek() == Token::COMMA) {
+      Expect(Token::COMMA, CHECK_OK);
+    }
+  }
+  
+  // await foo = bar();
+  // and
+  // await bar();
+  // are both valid
+  if (parameter_found)
+    Expect(Token::ASSIGN, CHECK_OK);
 
-
-  Block* result = new(zone()) Block(isolate(), NULL, 1, true);
-
-  ExpressionStatement* stmt = data.function_call->AsExpressionStatement();
+  // grab the next statement, which should be a function call.
+  Statement* function_call = ParseExpressionOrLabelledStatement(labels, ok);
+  ExpressionStatement* stmt = function_call->AsExpressionStatement();
   if (stmt == NULL) {
     *ok = false;
     ReportMessage("illegal_await", Vector<const char*>::empty());
@@ -1646,13 +1495,174 @@ Statement* Parser::ParseAwaitStatement(ZoneStringList* labels, bool* ok) {
     ReportMessage("illegal_await", Vector<const char*>::empty());
     return NULL;
   }
+  
+  FunctionLiteral* pump_func;
+  Handle<String> continuation = CreateUniqueIdentifier("await_body");
+
+  // create the callback function that is the continuation func
+  {
+    FunctionLiteral::Type type = FunctionLiteral::DECLARATION;
+    Handle<String> function_name;
+    bool should_infer_name = function_name.is_null();
+    // We want a non-null handle as the function name.
+    if (should_infer_name) {
+      function_name = isolate()->factory()->empty_symbol();
+      type = FunctionLiteral::ANONYMOUS_EXPRESSION;
+    }
+    
+    Scope* scope = (type == FunctionLiteral::DECLARATION &&
+                    !harmony_block_scoping_)
+        ? NewScope(top_scope_->DeclarationScope(), Scope::FUNCTION_SCOPE, false)
+        : NewScope(top_scope_, Scope::FUNCTION_SCOPE, inside_with());
+
+    LexicalScope lexical_scope(this, scope, isolate());
+    top_scope_->SetScopeName(function_name);
+    
+    int start_pos = scanner().location().beg_pos;
+    for (int i = 0; i < parameter_names.length(); i++) {
+      Handle<String> param_name = parameter_names.at(i);
+      top_scope_->DeclareParameter(param_name,
+                                   harmony_block_scoping_
+                                   ? Variable::LET
+                                   : Variable::VAR);
+    }
+    
+    // grab the continuation
+    FunctionLiteral* continuation_func = LiftContinuation(continuation, async_scope_, CHECK_OK);
+    VariableProxy* continuation_func_var = Declare(continuation, Variable::VAR, continuation_func, true, ok);
+    int end_pos = scanner().location().beg_pos;
+    
+    // create the continuation pump function
+    ZoneList<Statement*>* body = new(zone()) ZoneList<Statement*>(8);
+    pump_func = new(zone()) FunctionLiteral(isolate(),
+                                    function_name,
+                                    scope,
+                                    body,
+                                    lexical_scope.materialized_literal_count(),
+                                    lexical_scope.expected_property_count(),
+                                    lexical_scope.only_simple_this_property_assignments(),
+                                    lexical_scope.this_property_assignments(),
+                                    parameter_names.length(),
+                                    start_pos,
+                                    end_pos,
+                                    type,
+                                    false,
+                                    false);
+    
+    if (fni_ != NULL && should_infer_name) fni_->AddFunction(continuation_func);
+    continuation_func->set_function_token_position(start_pos);
+
+    VariableProxy* continuation_var = top_scope_->NewUnresolved(continuation, inside_with());
+    VariableProxy* continuation_var2 = top_scope_->NewUnresolved(continuation, inside_with());
+    VariableProxy* continuation_var3 = top_scope_->NewUnresolved(continuation, inside_with());
+
+    ZoneList<Expression*>* first_args = new(zone()) ZoneList<Expression*>(4);
+    for (int i = 0; i < top_scope_->num_parameters(); i++) {
+      first_args->Add(top_scope_->NewUnresolved(top_scope_->parameter(i)->name(), inside_with()));
+    }
+
+    AsyncScope* try_scope = NULL;
+    if (async_scope_)
+      try_scope = async_scope_->try_scope();
+
+    // if this await is inside a try block, make sure we bubble the exceptions up
+    if (try_scope) {
+      // reset all the finally watchers
+      while (try_scope) {
+        // the first loop through, this will return itself
+        try_scope = try_scope->try_scope();
+        if (try_scope) {
+          VariableProxy* skip_finally = top_scope_->NewUnresolved(try_scope->skip_finally(), inside_with());
+          Expression* assign = new(zone()) Assignment(isolate(), Token::ASSIGN, skip_finally, GetLiteralUndefined(), RelocInfo::kNoPosition);
+          body->InsertAt(0, new(zone()) ExpressionStatement(assign));
+
+          try_scope = try_scope->previous_scope();
+        }
+      }
+
+      // reset the try scope
+      try_scope = async_scope_->try_scope();
+
+      // create try catch for the continuation call and assignment
+      TargetCollector catch_collector;
+      Scope* catch_scope = NULL;
+      Variable* catch_variable = NULL;
+      Block* catch_block = new(zone()) Block(isolate(), NULL, 8, true);
+      Handle<String> catch_variable_name = CreateUniqueIdentifier("_catch_var");
+      {
+        Target target(&target_stack_, &catch_collector);
+        catch_scope = NewScope(top_scope_, Scope::CATCH_SCOPE, inside_with());
+        Variable::Mode mode = harmony_block_scoping_ ? Variable::LET : Variable::VAR;
+        catch_variable = catch_scope->DeclareLocal(catch_variable_name, mode);
+        Scope* saved_scope = top_scope_;
+        top_scope_ = catch_scope;
+
+        // catch the exception and send it on up
+        VariableProxy* catch_var = top_scope_->NewUnresolved(catch_variable_name, inside_with());
+        VariableProxy* exception = top_scope_->NewUnresolved(try_scope->exception(), inside_with());
+        Statement* assign = new(zone()) ExpressionStatement(new(zone()) Assignment(isolate(), Token::ASSIGN, exception, catch_var, scanner().location().beg_pos));
+
+        // save the exception variable
+        catch_block->AddStatement(assign);
+
+        // exception is saved, so let's set up the continuation that the await pump should use
+        VariableProxy* try_func = top_scope_->NewUnresolved(try_scope->continuation(), inside_with());
+        VariableProxy* continuation_var4 = top_scope_->NewUnresolved(continuation, inside_with());
+        Statement* reinit = new(zone()) ExpressionStatement(new(zone()) Assignment(isolate(), Token::ASSIGN, continuation_var4, try_func, scanner().location().beg_pos));
+        catch_block->AddStatement(reinit);
+
+        top_scope_ = saved_scope;
+      }
+
+
+      // add the try/catch to the body
+      Block* try_block = new(zone()) Block(isolate(), NULL, 8, true);
+
+      VariableProxy* continuation_var5 = top_scope_->NewUnresolved(continuation, inside_with());
+      VariableProxy* continuation_var6 = top_scope_->NewUnresolved(continuation, inside_with());
+      ZoneList<Expression*>* empty = new(zone()) ZoneList<Expression*>(0);
+      Expression* call_continuation = NewCall(continuation_var6, empty, scanner().location().beg_pos);
+      Statement* first_assign = new(zone()) ExpressionStatement(new(zone()) Assignment(isolate(), Token::ASSIGN, continuation_var5, call_continuation, scanner().location().beg_pos));
+
+      try_block->AddStatement(first_assign);
+
+
+      TryCatchStatement* statement = new(zone()) TryCatchStatement(try_block, catch_scope, catch_variable, catch_block);
+      // statement->set_escaping_targets(try_collector.targets());
+      body->Add(statement);
+    }
+    else {
+      VariableProxy* continuation_var5 = top_scope_->NewUnresolved(continuation, inside_with());
+      Statement* first_assign = new(zone()) ExpressionStatement(new(zone()) Assignment(isolate(), Token::ASSIGN, continuation_var5, continuation_func_var, scanner().location().beg_pos));
+      body->Add(first_assign);
+    }
+
+
+    ZoneList<Expression*>* args = new(zone()) ZoneList<Expression*>(0);
+    Expression* call_continuation = NewCall(continuation_var, args, scanner().location().beg_pos);
+
+    WhileStatement* loop = new(zone()) WhileStatement(isolate(), labels);
+    Block* while_block;
+
+    {
+      Target target(&target_stack_, loop);
+      while_block = new(zone()) Block(isolate(), NULL, 8, true);
+      Statement* assign = new(zone()) ExpressionStatement(new(zone()) Assignment(isolate(), Token::ASSIGN, continuation_var2, call_continuation, scanner().location().beg_pos));
+      while_block->AddStatement(assign);
+    }
+
+    loop->Initialize(continuation_var3, while_block);
+
+    // add the loop at the VERY end so in case an exception is thrown,
+    // the pump var is changed
+    body->Add(loop);
+  }
+
+  Block* result = new(zone()) Block(isolate(), NULL, 1, true);
 
   ZoneList<Expression*>* arguments = call->arguments();
   arguments->Add(pump_func);
-
-  // append a return 0 statement to short circuit this function until the callback
-  // is invoked.
-  result->AddStatement(data.function_call);
+  result->AddStatement(function_call);
 
   // prevent all finally blocks encapsulating this await from running.
   AsyncScope* async_scope = async_scope_;

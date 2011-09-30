@@ -582,9 +582,6 @@ class Parser {
 
   Statement* ParseAwaitStatement(ZoneStringList* labels, bool* ok);
   Statement* ParseAsyncStatement(ZoneStringList* labels, bool* ok);
-  static void ParseAwaitStatementBeforeCallback(ZoneList<Statement*>*& body, void* data);
-  static void ParseAwaitStatementAfterCallbackStatic(ZoneList<Statement*>*& body, void* data);
-  void ParseAwaitStatementAfterCallback(ZoneList<Statement*>*& body, void* data);
   Statement* AppendUnresolvedEmptyCall(ZoneList<Statement*>* body, Handle<String> name);
   Expression* CreateUnresolvedEmptyCall(Handle<String> name);
   Handle<String> CreateUniqueIdentifier(const char* name);
@@ -598,6 +595,7 @@ class Parser {
   static void DeclareAsyncContinuationAfterCallbackStatic(ZoneList<Statement*>*& body, void* data);
   void DeclareAsyncContinuationAfterCallback(ZoneList<Statement*>*& body, void* data);
   Statement* DebugBreak(const char* name = "debug_break");
+  FunctionLiteral* LiftContinuation(Handle<String> function_name, AsyncScope* previous_async_scope, bool* ok);
 
   Expression* NewCompareNode(Token::Value op,
                              Expression* x,
