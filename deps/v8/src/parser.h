@@ -629,17 +629,8 @@ class Parser {
                                         bool name_is_reserved,
                                         int function_token_position,
                                         FunctionLiteral::Type type,
-                                        bool* ok,
-                                        bool async_function = false,
-                                        bool parse_params = true,
-                                        bool process_braces = true,
-                                        bool require_lparen = true,
-                                        bool parse_body = true,
-                                        Token::Value param_end_token = Token::RPAREN,
-                                        Token::Value body_end_token = Token::RBRACE,
-                                        void(*before_body_callback)(ZoneList<Statement*>*& body, void* data) = NULL,
-                                        void(*after_body_callback)(ZoneList<Statement*>*& body, void* data) = NULL,
-                                        void* body_callback_data = NULL);
+                                        bool async_function,
+                                        bool* ok);
 
 
   // Magical syntax support.

@@ -798,6 +798,7 @@ FunctionLiteral* Parser::ParseLazy(CompilationInfo* info,
                                   false,  // Strict mode name already checked.
                                   RelocInfo::kNoPosition,
                                   type,
+                                  false,
                                   &ok);
     // Make sure the results agree.
     ASSERT(ok == (result != NULL));
@@ -1887,8 +1888,8 @@ Statement* Parser::ParseFunctionDeclaration(bool* ok) {
                                               is_strict_reserved,
                                               function_token_position,
                                               FunctionLiteral::DECLARATION,
-                                              ok,
-                                              async_function);
+                                              async_function,
+                                              CHECK_OK);
   if (!*ok) return NULL;
   // Even if we're not at the top-level of the global or a function
   // scope, we treat is as such and introduce the function with it's
@@ -3895,8 +3896,8 @@ Expression* Parser::ParseMemberWithNewPrefixesExpression(PositionStack* stack,
                                   is_strict_reserved_name,
                                   function_token_position,
                                   type,
-                                  ok,
-                                  async_function);
+                                  async_function,
+                                  CHECK_OK);
     if (!*ok) return NULL;
   } else {
     result = ParsePrimaryExpression(CHECK_OK);
@@ -4468,6 +4469,7 @@ ObjectLiteral::Property* Parser::ParseObjectLiteralGetSet(bool is_getter,
                              false,   // reserved words are allowed here
                              RelocInfo::kNoPosition,
                              FunctionLiteral::ANONYMOUS_EXPRESSION,
+                             false,
                              CHECK_OK);
     // Allow any number of parameters for compatiabilty with JSC.
     // Specification only allows zero parameters for get and one for set.
@@ -4678,17 +4680,8 @@ FunctionLiteral* Parser::ParseFunctionLiteral(Handle<String> function_name,
                                               bool name_is_strict_reserved,
                                               int function_token_position,
                                               FunctionLiteral::Type type,
-                                              bool* ok,
                                               bool async_function,
-                                              bool parse_params,
-                                              bool process_braces,
-                                              bool require_lparen,
-                                              bool parse_body,
-                                              Token::Value param_end_token,
-                                              Token::Value body_end_token,
-                                              void(*before_body_callback)(ZoneList<Statement*>*& body, void* data),
-                                              void(*after_body_callback)(ZoneList<Statement*>*& body, void* data),
-                                              void* body_callback_data) {
+                                              bool* ok) {
   // Function ::
   //   '(' FormalParameterList? ')' '{' FunctionBody '}'
 
@@ -4727,14 +4720,13 @@ FunctionLiteral* Parser::ParseFunctionLiteral(Handle<String> function_name,
 
     //  FormalParameterList ::
     //    '(' (Identifier)*[','] ')'
-    if (require_lparen)
-      Expect(Token::LPAREN, CHECK_OK);
+    Expect(Token::LPAREN, CHECK_OK);
     start_pos = scanner().location().beg_pos;
     Scanner::Location name_loc = Scanner::Location::invalid();
     Scanner::Location dupe_loc = Scanner::Location::invalid();
     Scanner::Location reserved_loc = Scanner::Location::invalid();
 
-    bool done = (!parse_params || peek() == param_end_token);
+    bool done = (peek() == Token::RPAREN);
     while (!done) {
       bool is_strict_reserved = false;
       Handle<String> param_name =
@@ -4764,18 +4756,12 @@ FunctionLiteral* Parser::ParseFunctionLiteral(Handle<String> function_name,
         *ok = false;
         return NULL;
       }
-      done = (peek() == param_end_token);
+      done = (peek() == Token::RPAREN);
       if (!done) Expect(Token::COMMA, CHECK_OK);
     }
-    
-    if (parse_params)
-      Expect(param_end_token, CHECK_OK);
+    Expect(Token::RPAREN, CHECK_OK);
 
-    if (before_body_callback != NULL)
-      before_body_callback(body, body_callback_data);
-
-    if (process_braces)
-      Expect(Token::LBRACE, CHECK_OK);
+    Expect(Token::LBRACE, CHECK_OK);
 
     // If we have a named function expression, we add a local variable
     // declaration to the body of the function with the name of the
@@ -4828,14 +4814,12 @@ FunctionLiteral* Parser::ParseFunctionLiteral(Handle<String> function_name,
         if (entry.strict_mode()) top_scope_->EnableStrictMode();
         only_simple_this_property_assignments = false;
         this_property_assignments = isolate()->factory()->empty_fixed_array();
-        if (process_braces)
-          Expect(Token::RBRACE, CHECK_OK);
+        Expect(Token::RBRACE, CHECK_OK);
       }
     }
 
     if (!is_lazily_compiled) {
-      if (parse_body)
-      ParseSourceElements(body, body_end_token, CHECK_OK);
+      ParseSourceElements(body, Token::RBRACE, CHECK_OK);
 
       materialized_literal_count = lexical_scope.materialized_literal_count();
       expected_property_count = lexical_scope.expected_property_count();
@@ -4843,17 +4827,8 @@ FunctionLiteral* Parser::ParseFunctionLiteral(Handle<String> function_name,
           lexical_scope.only_simple_this_property_assignments();
       this_property_assignments = lexical_scope.this_property_assignments();
 
-      if (process_braces)
-        Expect(body_end_token, CHECK_OK);
+      Expect(Token::RBRACE, CHECK_OK);
       end_pos = scanner().location().end_pos;
-    }
-
-    if (after_body_callback) {
-      if (is_lazily_compiled) {
-        *ok = false;
-        return NULL;
-      }
-      after_body_callback(body, body_callback_data);
     }
 
     // Validate strict mode.
