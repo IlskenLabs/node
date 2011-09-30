@@ -596,6 +596,7 @@ class Parser {
   void DeclareAsyncContinuationAfterCallback(ZoneList<Statement*>*& body, void* data);
   Statement* DebugBreak(const char* name = "debug_break");
   FunctionLiteral* LiftContinuation(Handle<String> function_name, AsyncScope* previous_async_scope, bool* ok);
+  TryCatchStatement* WrapContinuation(Handle<String> continuation, Handle<String> next_continuation, AsyncScope* try_scope);
 
   Expression* NewCompareNode(Token::Value op,
                              Expression* x,
