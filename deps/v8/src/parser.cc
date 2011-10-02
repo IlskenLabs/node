@@ -547,6 +547,52 @@ LexicalScope::~LexicalScope() {
 }
 
 
+// Support class for handling the scope of an async function call
+// This keeps track of continuations, try/catch/finally targets,
+// break targets, continue targets, etc.
+class AsyncScope {
+public:
+  AsyncScope()
+    : breaked_(false),
+      previous_scope_(NULL) {
+  }
+
+  AsyncScope(AsyncScope* previous_scope,
+                  Handle<String> continuation,
+                  Handle<String> loop_break = Handle<String>(),
+                  Handle<String> exception = Handle<String>(),
+                  Handle<String> skip_finally = Handle<String>());
+
+  bool log_break();
+  AsyncScope* break_scope();
+  AsyncScope* try_scope();
+  AsyncScope* previous_scope() { return previous_scope_; }
+
+  Handle<String> continuation() { return continuation_; }
+  Handle<String> loop_break() { return loop_break_; }
+  Handle<String> exception() { return exception_; }
+  void set_exception(Handle<String> exception) { exception_ = exception; }
+  void set_has_catch(bool has_catch) { has_catch_ = has_catch; }
+  void set_has_finally(bool has_finally) { has_finally_ = has_finally; }
+  bool has_catch() { return has_catch_; }
+  bool has_finally() { return has_finally_; }
+  Handle<String> skip_finally() { return skip_finally_; }
+  bool breaked() { return breaked_; }
+private:
+  Handle<String> continuation_;
+
+  Handle<String> loop_break_;
+  bool breaked_;
+
+  AsyncScope* previous_scope_;
+
+  // variable in use by the catch block
+  Handle<String> exception_;
+  Handle<String> skip_finally_;
+  bool has_catch_;
+  bool has_finally_;
+};
+
 
 AsyncScope::AsyncScope(AsyncScope* previous_scope,
                   Handle<String> continuation,
@@ -592,6 +638,19 @@ bool AsyncScope::log_break() {
   return true;
 }
 
+class AsyncFunction {
+public:
+  AsyncFunction(Parser* parser = NULL)
+    : parser_(parser) {
+      callback_ = parser->CreateUniqueIdentifier("_callback");
+    }
+  
+  Handle<String> callback() { return callback_; }
+private:
+  Parser* parser_;
+  Handle<String> callback_;
+};
+
 
 // ----------------------------------------------------------------------------
 // The CHECK_OK macro is a convenient macro to enforce error
@@ -635,7 +694,7 @@ Parser::Parser(Handle<Script> script,
       stack_overflow_(false),
       parenthesized_function_(false),
       harmony_block_scoping_(false),
-      async_function_(false),
+      async_function_(NULL),
       lifting_(NULL),
       async_scope_(NULL) {
   AstNode::ResetIds();
@@ -1425,7 +1484,7 @@ FunctionLiteral* Parser::LiftContinuation(Handle<String> function_name, AsyncSco
                                   end_pos,
                                   type,
                                   false,
-                                  async_function_);
+                                  true);
 
   if (previous_async_scope) {
     VariableProxy* previous_continuation = top_scope_->NewUnresolved(previous_async_scope->continuation(), inside_with());
@@ -1474,21 +1533,30 @@ Statement* Parser::ParseAwaitStatement(ZoneStringList* labels, bool* ok) {
   if (parameter_found)
     Expect(Token::ASSIGN, CHECK_OK);
 
-  // grab the next statement, which should be a function call.
-  Statement* function_call = ParseExpressionOrLabelledStatement(labels, ok);
-  ExpressionStatement* stmt = function_call->AsExpressionStatement();
-  if (stmt == NULL) {
-    *ok = false;
-    ReportMessage("illegal_await", Vector<const char*>::empty());
-    return NULL;
-  }
+  Statement* function_call = NULL;
+  Call* call = NULL;
+  if (peek() != Token::SEMICOLON) {
+    // grab the next statement, which should be a function call.
+    function_call = ParseExpressionOrLabelledStatement(labels, ok);
+    ExpressionStatement* stmt = function_call->AsExpressionStatement();
+    if (stmt == NULL) {
+      *ok = false;
+      ReportMessage("illegal_await", Vector<const char*>::empty());
+      return NULL;
+    }
 
-  Expression* expr = stmt->expression();
-  Call* call = expr->AsCall();
-  if (call == NULL) {
-    *ok = false;
-    ReportMessage("illegal_await", Vector<const char*>::empty());
-    return NULL;
+    Expression* expr = stmt->expression();
+    call = expr->AsCall();
+    if (call == NULL) {
+      *ok = false;
+      ReportMessage("illegal_await", Vector<const char*>::empty());
+      return NULL;
+    }
+  }
+  else {
+    // this should be empty?
+    ExpectSemicolon(CHECK_OK);
+    //ParseExpressionOrLabelledStatement(labels, ok);
   }
   
   FunctionLiteral* pump_func;
@@ -1612,9 +1680,11 @@ Statement* Parser::ParseAwaitStatement(ZoneStringList* labels, bool* ok) {
 
   Block* result = new(zone()) Block(isolate(), NULL, 1, true);
 
-  ZoneList<Expression*>* arguments = call->arguments();
-  arguments->Add(pump_func);
-  result->AddStatement(function_call);
+  if (call) {
+    ZoneList<Expression*>* arguments = call->arguments();
+    arguments->Add(pump_func);
+    result->AddStatement(function_call);
+  }
 
   // prevent all finally blocks encapsulating this await from running.
   AsyncScope* async_scope = async_scope_;
@@ -1629,7 +1699,12 @@ Statement* Parser::ParseAwaitStatement(ZoneStringList* labels, bool* ok) {
     }
   }
   
-  result->AddStatement(new(zone()) ReturnStatement(GetLiteralUndefined()));
+  if (call) {
+    result->AddStatement(new(zone()) ReturnStatement(GetLiteralUndefined()));
+  }
+  else {
+    result->AddStatement(new(zone()) ReturnStatement(pump_func));
+  }
   return result;
 }
 
@@ -2492,6 +2567,11 @@ Statement* Parser::ParseReturnStatement(bool* ok) {
   // reporting any errors on it, because of the way errors are
   // reported (underlining).
   Expect(Token::RETURN, CHECK_OK);
+  
+  if (async_function_) {
+    
+    
+  }
 
   // An ECMAScript program is considered syntactically incorrect if it
   // contains a return statement that is not within the body of a
@@ -4679,13 +4759,14 @@ FunctionLiteral* Parser::ParseFunctionLiteral(Handle<String> function_name,
                                               bool name_is_strict_reserved,
                                               int function_token_position,
                                               FunctionLiteral::Type type,
-                                              bool async_function,
+                                              bool is_async_function,
                                               bool* ok) {
   // Function ::
   //   '(' FormalParameterList? ')' '{' FunctionBody '}'
 
-  bool was_async_function = async_function_;
-  async_function_ = async_function;
+  AsyncFunction async_function(this);
+  AsyncFunction* previous_async_function = async_function_;
+  if (is_async_function) async_function_ = &async_function;
 
   // Anonymous functions were passed either the empty symbol or a null
   // handle as the function name.  Remember if we were passed a non-empty
@@ -4757,6 +4838,13 @@ FunctionLiteral* Parser::ParseFunctionLiteral(Handle<String> function_name,
       }
       done = (peek() == Token::RPAREN);
       if (!done) Expect(Token::COMMA, CHECK_OK);
+    }
+    if (is_async_function) {
+      top_scope_->DeclareParameter(async_function_->callback(),
+        harmony_block_scoping_
+         ? Variable::LET
+         : Variable::VAR);
+       num_parameters++;
     }
     Expect(Token::RPAREN, CHECK_OK);
 
@@ -4892,11 +4980,11 @@ FunctionLiteral* Parser::ParseFunctionLiteral(Handle<String> function_name,
                                   end_pos,
                                   type,
                                   has_duplicate_parameters,
-                                  async_function);
+                                  is_async_function);
   function_literal->set_function_token_position(function_token_position);
 
+  if (is_async_function) async_function_ = previous_async_function;
   if (fni_ != NULL && should_infer_name) fni_->AddFunction(function_literal);
-  async_function_ = was_async_function;
   return function_literal;
 }
 

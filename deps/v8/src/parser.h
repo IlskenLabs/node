@@ -43,6 +43,7 @@ class ParserLog;
 class PositionStack;
 class Target;
 class LexicalScope;
+class AsyncFunction;
 class AsyncScope;
 
 template <typename T> class ZoneListWrapper;
@@ -413,51 +414,6 @@ class RegExpParser {
   bool failed_;
 };
 
-// Support class for handling the scope of an async function call
-// This keeps track of continuations, try/catch/finally targets,
-// break targets, continue targets, etc.
-class AsyncScope {
-public:
-  AsyncScope()
-    : breaked_(false),
-      previous_scope_(NULL) {
-  }
-
-  AsyncScope(AsyncScope* previous_scope,
-                  Handle<String> continuation,
-                  Handle<String> loop_break = Handle<String>(),
-                  Handle<String> exception = Handle<String>(),
-                  Handle<String> skip_finally = Handle<String>());
-
-  bool log_break();
-  AsyncScope* break_scope();
-  AsyncScope* try_scope();
-  AsyncScope* previous_scope() { return previous_scope_; }
-
-  Handle<String> continuation() { return continuation_; }
-  Handle<String> loop_break() { return loop_break_; }
-  Handle<String> exception() { return exception_; }
-  void set_exception(Handle<String> exception) { exception_ = exception; }
-  void set_has_catch(bool has_catch) { has_catch_ = has_catch; }
-  void set_has_finally(bool has_finally) { has_finally_ = has_finally; }
-  bool has_catch() { return has_catch_; }
-  bool has_finally() { return has_finally_; }
-  Handle<String> skip_finally() { return skip_finally_; }
-  bool breaked() { return breaked_; }
-private:
-  Handle<String> continuation_;
-
-  Handle<String> loop_break_;
-  bool breaked_;
-
-  AsyncScope* previous_scope_;
-
-  // variable in use by the catch block
-  Handle<String> exception_;
-  Handle<String> skip_finally_;
-  bool has_catch_;
-  bool has_finally_;
-};
 
 // ----------------------------------------------------------------------------
 // JAVASCRIPT PARSING
@@ -629,7 +585,7 @@ class Parser {
                                         bool name_is_reserved,
                                         int function_token_position,
                                         FunctionLiteral::Type type,
-                                        bool async_function,
+                                        bool is_async_function,
                                         bool* ok);
 
 
@@ -801,10 +757,11 @@ class Parser {
   bool parenthesized_function_;
   bool harmony_block_scoping_;
 
-  bool async_function_;
+  AsyncFunction* async_function_;
   void* lifting_;
   AsyncScope* async_scope_;
 
+  friend class AsyncFunction;
   friend class LexicalScope;
 };
 
