@@ -1530,7 +1530,7 @@ Statement* Parser::ParseAwaitStatement(ZoneStringList* labels, bool* ok) {
   // and
   // await bar();
   // are both valid
-  if (parameter_found)
+  if (parameter_found && peek() != Token::SEMICOLON)
     Expect(Token::ASSIGN, CHECK_OK);
 
   Statement* function_call = NULL;
