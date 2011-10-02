@@ -2569,8 +2569,15 @@ Statement* Parser::ParseReturnStatement(bool* ok) {
   Expect(Token::RETURN, CHECK_OK);
   
   if (async_function_) {
-    
-    
+    ZoneList<Expression*>* arguments = new(zone()) ZoneList<Expression*>(2);
+    while (peek() != Token::SEMICOLON) {
+      Expression* expr = ParseExpression(true, CHECK_OK);
+      arguments->Add(expr);
+    }
+    ExpectSemicolon(CHECK_OK);
+    VariableProxy* callback = top_scope_->NewUnresolved(async_function_->callback(), inside_with(), scanner().location().beg_pos);
+    Expression* callback_call = NewCall(callback, arguments, scanner().location().beg_pos);
+    return new(zone()) ExpressionStatement(callback_call);
   }
 
   // An ECMAScript program is considered syntactically incorrect if it
