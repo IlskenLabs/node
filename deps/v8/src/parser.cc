@@ -2577,7 +2577,10 @@ Statement* Parser::ParseReturnStatement(bool* ok) {
     ExpectSemicolon(CHECK_OK);
     VariableProxy* callback = top_scope_->NewUnresolved(async_function_->callback(), inside_with(), scanner().location().beg_pos);
     Expression* callback_call = NewCall(callback, arguments, scanner().location().beg_pos);
-    return new(zone()) ExpressionStatement(callback_call);
+    Block* result = new(zone()) Block(isolate(), NULL, 1, true);
+    result->AddStatement(new(zone()) ExpressionStatement(callback_call));
+    result->AddStatement(new(zone()) ReturnStatement(GetLiteralUndefined()));
+    return result;
   }
 
   // An ECMAScript program is considered syntactically incorrect if it
