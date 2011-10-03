@@ -2576,9 +2576,11 @@ Statement* Parser::ParseReturnStatement(bool* ok) {
     }
     ExpectSemicolon(CHECK_OK);
     VariableProxy* callback = top_scope_->NewUnresolved(async_function_->callback(), inside_with(), scanner().location().beg_pos);
+    VariableProxy* callback_check = top_scope_->NewUnresolved(async_function_->callback(), inside_with(), scanner().location().beg_pos);
     Expression* callback_call = NewCall(callback, arguments, scanner().location().beg_pos);
+    IfStatement* if_callback = new(zone()) IfStatement(isolate(), callback_check, new(zone()) ExpressionStatement(callback_call), EmptyStatement());
     Block* result = new(zone()) Block(isolate(), NULL, 1, true);
-    result->AddStatement(new(zone()) ExpressionStatement(callback_call));
+    result->AddStatement(if_callback);
     result->AddStatement(new(zone()) ReturnStatement(GetLiteralUndefined()));
     return result;
   }
