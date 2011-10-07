@@ -28,6 +28,7 @@
 #include <errno.h>
 
 #include <sys/inotify.h>
+#include <sys/sysinfo.h>
 #include <unistd.h>
 #include <time.h>
 
@@ -52,6 +53,16 @@ uint64_t uv_hrtime() {
   return (ts.tv_sec * NANOSEC + ts.tv_nsec);
 }
 
+void uv_loadavg(double avg[3]) {
+  struct sysinfo info;
+
+  if (sysinfo(&info) < 0) return;
+
+  avg[0] = (double) info.loads[0] / 65536.0;
+  avg[1] = (double) info.loads[1] / 65536.0;
+  avg[2] = (double) info.loads[2] / 65536.0;
+}
+
 
 int uv_exepath(char* buffer, size_t* size) {
   if (!buffer || !size) {
@@ -64,6 +75,13 @@ int uv_exepath(char* buffer, size_t* size) {
   return 0;
 }
 
+double uv_get_free_memory(void) {
+  return (double) sysconf(_SC_PAGESIZE) * sysconf(_SC_AVPHYS_PAGES);
+}
+
+double uv_get_total_memory(void) {
+  return (double) sysconf(_SC_PAGESIZE) * sysconf(_SC_PHYS_PAGES);
+}
 
 static int new_inotify_fd(void) {
 #if defined(IN_NONBLOCK) && defined(IN_CLOEXEC)
@@ -145,7 +163,7 @@ int uv_fs_event_init(uv_loop_t* loop,
    * keep creating new inotify fds.
    */
   if ((fd = new_inotify_fd()) == -1) {
-    uv_err_new(loop, errno);
+    uv__set_sys_error(loop, errno);
     return -1;
   }
 
@@ -158,7 +176,7 @@ int uv_fs_event_init(uv_loop_t* loop,
         | IN_MOVED_TO;
 
   if (inotify_add_watch(fd, filename, flags) == -1) {
-    uv_err_new(loop, errno);
+    uv__set_sys_error(loop, errno);
     uv__close(fd);
     return -1;
   }

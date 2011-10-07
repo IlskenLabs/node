@@ -95,6 +95,29 @@ const char* uv_err_name(uv_err_t err) {
 }
 
 
+void uv__set_error(uv_loop_t* loop, uv_err_code code, int sys_error) {
+  loop->last_err.code = code;
+  loop->last_err.sys_errno_ = sys_error;
+}
+
+
+void uv__set_sys_error(uv_loop_t* loop, int sys_error) {
+  loop->last_err.code = uv_translate_sys_error(sys_error);
+  loop->last_err.sys_errno_ = sys_error;
+}
+
+
+void uv__set_artificial_error(uv_loop_t* loop, uv_err_code code) {
+  loop->last_err.code = code;
+  loop->last_err.sys_errno_ = 0;
+}
+
+
+uv_err_t uv_last_error(uv_loop_t* loop) {
+  return loop->last_err;
+}
+
+
 struct sockaddr_in uv_ip4_addr(const char* ip, int port) {
   struct sockaddr_in addr;
 
@@ -182,4 +205,66 @@ void uv_remove_ares_handle(uv_ares_task_t* handle) {
 /* Returns 1 if the uv_ares_handles_ list is empty. 0 otherwise. */
 int uv_ares_handles_empty(uv_loop_t* loop) {
   return loop->uv_ares_handles_ ? 0 : 1;
+}
+
+int uv_tcp_bind(uv_tcp_t* handle, struct sockaddr_in addr) {
+  if (handle->type != UV_TCP || addr.sin_family != AF_INET) {
+    uv__set_artificial_error(handle->loop, UV_EFAULT);
+    return -1;
+  }
+
+  return uv__tcp_bind(handle, addr);
+}
+
+int uv_tcp_bind6(uv_tcp_t* handle, struct sockaddr_in6 addr) {
+  if (handle->type != UV_TCP || addr.sin6_family != AF_INET6) {
+    uv__set_artificial_error(handle->loop, UV_EFAULT);
+    return -1;
+  }
+
+  return uv__tcp_bind6(handle, addr);
+}
+
+int uv_udp_bind(uv_udp_t* handle, struct sockaddr_in addr,
+    unsigned int flags) {
+  if (handle->type != UV_UDP || addr.sin_family != AF_INET) {
+    uv__set_artificial_error(handle->loop, UV_EFAULT);
+    return -1;
+  }
+
+  return uv__udp_bind(handle, addr, flags);
+}
+
+int uv_udp_bind6(uv_udp_t* handle, struct sockaddr_in6 addr,
+    unsigned int flags) {
+  if (handle->type != UV_UDP || addr.sin6_family != AF_INET6) {
+    uv__set_artificial_error(handle->loop, UV_EFAULT);
+    return -1;
+  }
+
+  return uv__udp_bind6(handle, addr, flags);
+}
+
+int uv_tcp_connect(uv_connect_t* req,
+                   uv_tcp_t* handle,
+                   struct sockaddr_in address,
+                   uv_connect_cb cb) {
+  if (handle->type != UV_TCP || address.sin_family != AF_INET) {
+    uv__set_artificial_error(handle->loop, UV_EINVAL);
+    return -1;
+  }
+
+  return uv__tcp_connect(req, handle, address, cb);
+}
+
+int uv_tcp_connect6(uv_connect_t* req,
+                    uv_tcp_t* handle,
+                    struct sockaddr_in6 address,
+                    uv_connect_cb cb) {
+  if (handle->type != UV_TCP || address.sin6_family != AF_INET6) {
+    uv__set_artificial_error(handle->loop, UV_EINVAL);
+    return -1;
+  }
+
+  return uv__tcp_connect6(req, handle, address, cb);
 }
