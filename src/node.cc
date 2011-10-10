@@ -1078,6 +1078,9 @@ void MakeCallback(Handle<Object> object,
   HandleScope scope;
 
   Local<Value> callback_v = object->Get(String::New(method)); 
+  if (!callback_v->IsFunction()) {
+    fprintf(stderr, "method = %s", method);
+  }
   assert(callback_v->IsFunction());
   Local<Function> callback = Local<Function>::Cast(callback_v);
 
@@ -2401,6 +2404,7 @@ static void EnableDebugSignalHandler(int signal) {
 
 #if defined(__MINGW32__) || defined(_MSC_VER)
 static bool EnableDebugSignalHandler(DWORD signal) {
+  if (signal == CTRL_C_EVENT) exit(1);
   if (signal != CTRL_BREAK_EVENT) return false;
 
   // Break once process will return execution to v8

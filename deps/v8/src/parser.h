@@ -551,11 +551,6 @@ class Parser {
   TryCatchStatement* WrapContinuation(Handle<String> continuation, Handle<String> next_continuation, AsyncScope* try_scope);
   FunctionLiteral* CreateEmptyFunctionLiteral(Handle<String> function_name);
 
-  Expression* NewCompareNode(Token::Value op,
-                             Expression* x,
-                             Expression* y,
-                             int position);
-
   // Populate the constant properties fixed array for a materialized object
   // literal.
   void BuildObjectLiteralConstantProperties(
