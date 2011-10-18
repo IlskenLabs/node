@@ -4785,7 +4785,10 @@ FunctionLiteral* Parser::ParseFunctionLiteral(Handle<String> function_name,
 
   AsyncFunction async_function(this);
   AsyncFunction* previous_async_function = async_function_;
-  if (is_async_function) async_function_ = &async_function;
+  if (is_async_function)
+    async_function_ = &async_function;
+  else
+    async_function_ = NULL;
 
   // Anonymous functions were passed either the empty symbol or a null
   // handle as the function name.  Remember if we were passed a non-empty
