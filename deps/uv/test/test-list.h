@@ -20,6 +20,7 @@
  */
 
 TEST_DECLARE   (tty)
+TEST_DECLARE   (stdio_over_pipes)
 TEST_DECLARE   (ipc)
 TEST_DECLARE   (tcp_ping_pong)
 TEST_DECLARE   (tcp_ping_pong_v6)
@@ -36,6 +37,7 @@ TEST_DECLARE   (tcp_bind_error_inval)
 TEST_DECLARE   (tcp_bind_localhost_ok)
 TEST_DECLARE   (tcp_listen_without_bind)
 TEST_DECLARE   (tcp_close)
+TEST_DECLARE   (tcp_flags)
 TEST_DECLARE   (tcp_write_error)
 TEST_DECLARE   (tcp_bind6_error_addrinuse)
 TEST_DECLARE   (tcp_bind6_error_addrnotavail)
@@ -117,6 +119,7 @@ HELPER_DECLARE (pipe_echo_server)
 
 TASK_LIST_START
   TEST_ENTRY  (tty)
+  TEST_ENTRY  (stdio_over_pipes)
   TEST_ENTRY  (ipc)
 
 
@@ -147,6 +150,7 @@ TASK_LIST_START
   TEST_ENTRY  (tcp_bind_localhost_ok)
   TEST_ENTRY  (tcp_listen_without_bind)
   TEST_ENTRY  (tcp_close)
+  TEST_ENTRY  (tcp_flags)
   TEST_ENTRY  (tcp_write_error)
 
   TEST_ENTRY  (tcp_bind6_error_addrinuse)

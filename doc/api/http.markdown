@@ -387,23 +387,29 @@ followed by `response.end()`.
 ## http.request(options, callback)
 
 Node maintains several connections per server to make HTTP requests.
-This function allows one to transparently issue requests.
+This function allows one to transparently issue requests.  `options` align
+with [url.parse()](url.html#url.parse).
 
 Options:
 
 - `host`: A domain name or IP address of the server to issue the request to.
-- `port`: Port of remote server.
+  Defaults to `'localhost'`.
+- `hostname`: To support `url.parse()` `hostname` is prefered over `host`
+- `port`: Port of remote server. Defaults to 80.
 - `socketPath`: Unix Domain Socket (use one of host:port or socketPath)
-- `method`: A string specifying the HTTP request method. Possible values:
-  `'GET'` (default), `'POST'`, `'PUT'`, and `'DELETE'`.
-- `path`: Request path. Should include query string and fragments if any.
-   E.G. `'/index.html?page=12'`
+- `method`: A string specifying the HTTP request method. Defaults to `'GET'`.
+- `path`: Request path. Defaults to `'/'`. Should include query string if any.
+  E.G. `'/index.html?page=12'`
 - `headers`: An object containing request headers.
-- `agent`: Controls `Agent` behavior. When an Agent is used request will default to 
-   Connection:keep-alive. Possible values:
- - `undefined` (default): use default `Agent` for this host and port.
+- `auth`: Basic authentication i.e. `'user:password'` to compute an
+  Authorization header.
+- `agent`: Controls [Agent](#http.Agent) behavior. When an Agent is used
+  request will default to `Connection: keep-alive`. Possible values:
+ - `undefined` (default): use [global Agent](#http.globalAgent) for this host
+   and port.
  - `Agent` object: explicitly use the passed in `Agent`.
- - `false`: opts out of connection pooling with an Agent, defaults request to Connection:close.
+ - `false`: opts out of connection pooling with an Agent, defaults request to
+   `Connection: close`.
 
 `http.request()` returns an instance of the `http.ClientRequest`
 class. The `ClientRequest` instance is a writable stream. If one needs to
@@ -456,6 +462,9 @@ There are a few special headers that should be noted.
   and listen for the `continue` event. See RFC2616 Section 8.2.3 for more
   information.
 
+* Sending an Authorization header will override useing the `auth` option
+  to compute basic authentication.
+
 ## http.get(options, callback)
 
 Since most requests are GET requests without bodies, Node provides this
@@ -479,21 +488,21 @@ Example:
 
 ## http.Agent
 
-In node 0.5.3+ there is a new implementation of the HTTP Agent which is used 
+In node 0.5.3+ there is a new implementation of the HTTP Agent which is used
 for pooling sockets used in HTTP client requests.
 
-Previously, a single agent instance help the pool for single host+port. The 
+Previously, a single agent instance help the pool for single host+port. The
 current implementation now holds sockets for any number of hosts.
 
-The current HTTP Agent also defaults client requests to using 
-Connection:keep-alive. If no pending HTTP requests are waiting on a socket 
-to become free the socket is closed. This means that node's pool has the 
-benefit of keep-alive when under load but still does not require developers 
+The current HTTP Agent also defaults client requests to using
+Connection:keep-alive. If no pending HTTP requests are waiting on a socket
+to become free the socket is closed. This means that node's pool has the
+benefit of keep-alive when under load but still does not require developers
 to manually close the HTTP clients using keep-alive.
 
-Sockets are removed from the agent's pool when the socket emits either a 
-"close" event or a special "agentRemove" event. This means that if you intend 
-to keep one HTTP request open for a long time and don't want it to stay in the 
+Sockets are removed from the agent's pool when the socket emits either a
+"close" event or a special "agentRemove" event. This means that if you intend
+to keep one HTTP request open for a long time and don't want it to stay in the
 pool you can do something along the lines of:
 
     http.get(options, function(res) {
@@ -501,7 +510,7 @@ pool you can do something along the lines of:
     }).on("socket", function (socket) {
       socket.emit("agentRemove");
     });
-  
+
 Alternatively, you could just opt out of pooling entirely using `agent:false`:
 
     http.get({host:'localhost', port:80, path:'/', agent:false}, function (res) {

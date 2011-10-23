@@ -106,7 +106,6 @@ static Persistent<String> errpath_symbol;
 static Persistent<String> code_symbol;
 
 static Persistent<String> rss_symbol;
-static Persistent<String> vsize_symbol;
 static Persistent<String> heap_total_symbol;
 static Persistent<String> heap_used_symbol;
 
@@ -1005,7 +1004,7 @@ Local<Value> ErrnoException(int errorno,
   Local<String> cons1 = String::Concat(estring, String::NewSymbol(", "));
   Local<String> cons2 = String::Concat(cons1, message);
 
-  if (errno_symbol.IsEmpty()) {
+  if (syscall_symbol.IsEmpty()) {
     syscall_symbol = NODE_PSYMBOL("syscall");
     errno_symbol = NODE_PSYMBOL("errno");
     errpath_symbol = NODE_PSYMBOL("path");
@@ -1081,11 +1080,21 @@ void MakeCallback(Handle<Object> object,
 }
 
 
-void SetErrno(uv_err_code code) {
-  uv_err_t err;
-  err.code = code;
-  Context::GetCurrent()->Global()->Set(String::NewSymbol("errno"),
-                                       String::NewSymbol(uv_err_name(err)));
+void SetErrno(uv_err_t err) {
+  HandleScope scope;
+
+  if (errno_symbol.IsEmpty()) {
+    errno_symbol = NODE_PSYMBOL("errno");
+  }
+
+  if (err.code == UV_UNKNOWN) {
+    char errno_buf[100];
+    snprintf(errno_buf, 100, "Unknown system errno %d", err.sys_errno_);
+    Context::GetCurrent()->Global()->Set(errno_symbol, String::New(errno_buf));
+  } else {
+    Context::GetCurrent()->Global()->Set(errno_symbol,
+                                         String::NewSymbol(uv_err_name(err)));
+  }
 }
 
 
@@ -1327,38 +1336,6 @@ Local<Value> ExecuteString(Handle<String> source, Handle<Value> filename) {
   }
 
   return scope.Close(result);
-}
-
-
-/* STDERR IS ALWAY SYNC ALWAYS UTF8 */
-static Handle<Value> WriteError (const Arguments& args) {
-  HandleScope scope;
-
-  if (args.Length() < 1) {
-    return Undefined();
-  }
-
-  String::Utf8Value msg(args[0]->ToString());
-
-  ssize_t r;
-  size_t written = 0;
-  while (written < (size_t) msg.length()) {
-    r = write(STDERR_FILENO, (*msg) + written, msg.length() - written);
-    if (r < 0) {
-      if (errno == EAGAIN || errno == EIO) {
-#ifdef __POSIX__
-        usleep(100);
-#else
-        Sleep(100);
-#endif
-        continue;
-      }
-      return ThrowException(ErrnoException(errno, "write"));
-    }
-    written += (size_t)r;
-  }
-
-  return True();
 }
 
 
@@ -1614,9 +1591,9 @@ v8::Handle<v8::Value> MemoryUsage(const v8::Arguments& args) {
   HandleScope scope;
   assert(args.Length() == 0);
 
-  size_t rss, vsize;
+  size_t rss;
 
-  int r = Platform::GetMemory(&rss, &vsize);
+  int r = Platform::GetMemory(&rss);
 
   if (r != 0) {
     return ThrowException(Exception::Error(String::New(strerror(errno))));
@@ -1626,13 +1603,11 @@ v8::Handle<v8::Value> MemoryUsage(const v8::Arguments& args) {
 
   if (rss_symbol.IsEmpty()) {
     rss_symbol = NODE_PSYMBOL("rss");
-    vsize_symbol = NODE_PSYMBOL("vsize");
     heap_total_symbol = NODE_PSYMBOL("heapTotal");
     heap_used_symbol = NODE_PSYMBOL("heapUsed");
   }
 
   info->Set(rss_symbol, Integer::NewFromUnsigned(rss));
-  info->Set(vsize_symbol, Integer::NewFromUnsigned(vsize));
 
   // V8 memory usage
   HeapStatistics v8_heap_stats;
@@ -2173,8 +2148,6 @@ Handle<Object> SetupProcessObject(int argc, char *argv[]) {
   NODE_SET_METHOD(process, "reallyExit", Exit);
   NODE_SET_METHOD(process, "chdir", Chdir);
   NODE_SET_METHOD(process, "cwd", Cwd);
-
-  NODE_SET_METHOD(process, "writeError", WriteError);
 
   NODE_SET_METHOD(process, "umask", Umask);
 

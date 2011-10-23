@@ -37,6 +37,10 @@ APPNAME="node.js"
 sys.path.append(sys.argv[0] + '/tools');
 import js2c
 
+if sys.platform.startswith("cygwin"):
+  print "cygwin not supported"
+  sys.exit(1)
+
 srcdir = '.'
 blddir = 'out'
 supported_archs = ('arm', 'ia32', 'x64') # 'mips' supported by v8, but not node
@@ -260,7 +264,7 @@ def configure(conf):
     conf.env['LIBDIR'] = conf.env['PREFIX'] + '/lib'
 
   conf.env["USE_DEBUG"] = o.debug
-  # Snapshot building does noet seem to work on cygwin and mingw32
+  # Snapshot building does noet seem to work on mingw32
   conf.env["SNAPSHOT_V8"] = not o.without_snapshot and not sys.platform.startswith("win32")
   if sys.platform.startswith("sunos"):
     conf.env["SNAPSHOT_V8"] = False
@@ -276,7 +280,7 @@ def configure(conf):
     conf.env.append_value("LINKFLAGS", "-lz")
 
   conf.check(lib='dl', uselib_store='DL')
-  if not sys.platform.startswith("sunos") and not sys.platform.startswith("cygwin") and not sys.platform.startswith("win32"):
+  if not sys.platform.startswith("sunos") and not sys.platform.startswith("win32"):
     conf.env.append_value("CCFLAGS", "-rdynamic")
     conf.env.append_value("LINKFLAGS_DL", "-rdynamic")
 
@@ -440,7 +444,7 @@ def configure(conf):
     conf.env.append_value ('CCFLAGS', '-threads')
     conf.env.append_value ('CXXFLAGS', '-threads')
     #conf.env.append_value ('LINKFLAGS', ' -threads')
-  elif not sys.platform.startswith("cygwin") and not sys.platform.startswith("win32"):
+  elif not sys.platform.startswith("win32"):
     threadflags='-pthread'
     conf.env.append_value ('CCFLAGS', threadflags)
     conf.env.append_value ('CXXFLAGS', threadflags)
@@ -923,12 +927,6 @@ def build(bld):
   if os.environ.has_key('RPATH'):
     node.rpath = os.environ['RPATH']
 
-  if sys.platform.startswith('cygwin'):
-    bld.env.append_value('LINKFLAGS', '-Wl,--export-all-symbols')
-    bld.env.append_value('LINKFLAGS', '-Wl,--out-implib,default/libnode.dll.a')
-    bld.env.append_value('LINKFLAGS', '-Wl,--output-def,default/libnode.def')
-    bld.install_files('${LIBDIR}', "out/Release/libnode.*")
-
   if (sys.platform.startswith("win32")):
     # Static libgcc
     bld.env.append_value('LINKFLAGS', '-static-libgcc')
@@ -1000,9 +998,9 @@ def shutdown():
       if os.path.exists('out/Debug/node.exe'):
         os.system('cp out/Debug/node.exe node_g.exe')
     else:
-      if os.path.exists('out/Release/node') and not os.path.exists('node'):
+      if os.path.exists('out/Release/node') and not os.path.islink('node'):
         os.symlink('out/Release/node', 'node')
-      if os.path.exists('out/Debug/node') and not os.path.exists('node_g'):
+      if os.path.exists('out/Debug/node') and not os.path.islink('node_g'):
         os.symlink('out/Debug/node', 'node_g')
   else:
     if sys.platform.startswith("win32"):

@@ -107,7 +107,7 @@
       // If stdin is a TTY.
       if (NativeModule.require('tty').isatty(0)) {
         // REPL
-        Module.requireRepl().start();
+        var repl = Module.requireRepl().start('> ', null, null, true);
 
       } else {
         // Read all of stdin - execute it.
@@ -321,24 +321,34 @@
   };
 
   startup.processKillAndExit = function() {
+    var isWindows = process.platform === 'win32';
+
     process.exit = function(code) {
       process.emit('exit', code || 0);
       process.reallyExit(code || 0);
     };
 
-    process.kill = function(pid, sig) {
-      // preserve null signal
-      if (0 === sig) {
-        process._kill(pid, 0);
-      } else {
-        sig = sig || 'SIGTERM';
-        if (startup.lazyConstants()[sig]) {
-          process._kill(pid, startup.lazyConstants()[sig]);
-        } else {
-          throw new Error('Unknown signal: ' + sig);
-        }
+    if (isWindows) {
+      process.kill = function(pid, sig) {
+        console.warn('process.kill() is not supported on Windows.  Use ' +
+                     'child.kill() to kill a process that was started '  +
+                     'with child_process.spawn().');
       }
-    };
+    } else {
+      process.kill = function(pid, sig) {
+        // preserve null signal
+        if (0 === sig) {
+          process._kill(pid, 0);
+        } else {
+          sig = sig || 'SIGTERM';
+          if (startup.lazyConstants()[sig]) {
+            process._kill(pid, startup.lazyConstants()[sig]);
+          } else {
+            throw new Error('Unknown signal: ' + sig);
+          }
+        }
+      };
+    }
   };
 
   startup.processSignalHandlers = function() {
