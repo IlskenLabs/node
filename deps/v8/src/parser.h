@@ -754,7 +754,6 @@ class Parser {
 
   AsyncFunction* async_function_;
   void* lifting_;
-  AsyncScope* async_scope_;
 
   friend class AsyncFunction;
   friend class LexicalScope;

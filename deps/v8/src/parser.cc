@@ -641,14 +641,18 @@ bool AsyncScope::log_break() {
 class AsyncFunction {
 public:
   AsyncFunction(Parser* parser = NULL)
-    : parser_(parser) {
+    : parser_(parser),
+      async_scope_(NULL) {
       callback_ = parser->CreateUniqueIdentifier("_callback");
     }
   
   Handle<String> callback() { return callback_; }
+  AsyncScope* get_async_scope() { return async_scope_; }
+  void set_async_scope(AsyncScope* async_scope) { async_scope_ = async_scope; }
 private:
   Parser* parser_;
   Handle<String> callback_;
+  AsyncScope* async_scope_;
 };
 
 
@@ -695,8 +699,7 @@ Parser::Parser(Handle<Script> script,
       parenthesized_function_(false),
       harmony_scoping_(false),
       async_function_(NULL),
-      lifting_(NULL),
-      async_scope_(NULL) {
+      lifting_(NULL) {
   AstNode::ResetIds();
 }
 
@@ -1615,7 +1618,7 @@ Statement* Parser::ParseAwaitStatement(ZoneStringList* labels, bool* ok) {
     }
     
     // grab the continuation
-    FunctionLiteral* continuation_func = LiftContinuation(continuation, async_scope_, CHECK_OK);
+    FunctionLiteral* continuation_func = LiftContinuation(continuation, async_function_->get_async_scope(), CHECK_OK);
     VariableProxy* continuation_func_var = Declare(continuation, VAR, continuation_func, true, ok);
     int end_pos = scanner().location().beg_pos;
     
@@ -1649,8 +1652,8 @@ Statement* Parser::ParseAwaitStatement(ZoneStringList* labels, bool* ok) {
     }
 
     AsyncScope* try_scope = NULL;
-    if (async_scope_)
-      try_scope = async_scope_->try_scope();
+    if (async_function_->get_async_scope())
+      try_scope = async_function_->get_async_scope()->try_scope();
 
     // if this await is inside a try block, make sure we bubble the exceptions up
     if (try_scope) {
@@ -1668,7 +1671,7 @@ Statement* Parser::ParseAwaitStatement(ZoneStringList* labels, bool* ok) {
       }
 
       // reset the try scope
-      try_scope = async_scope_->try_scope();
+      try_scope = async_function_->get_async_scope()->try_scope();
 
       TryCatchStatement* statement = WrapContinuation(continuation, continuation, try_scope);
       
@@ -1711,7 +1714,7 @@ Statement* Parser::ParseAwaitStatement(ZoneStringList* labels, bool* ok) {
   }
 
   // prevent all finally blocks encapsulating this await from running.
-  AsyncScope* async_scope = async_scope_;
+  AsyncScope* async_scope = async_function_->get_async_scope();
   while (async_scope) {
     async_scope = async_scope->try_scope();
     if (async_scope) {
@@ -2420,12 +2423,12 @@ Statement* Parser::ParseIfStatement(ZoneStringList* labels, bool* ok) {
   //   'if' '(' Expression ')' Statement ('else' Statement)?
 
   AsyncScope async_scope;
-  AsyncScope* previous_async_scope = async_scope_;
+  AsyncScope* previous_async_scope = async_function_ ? async_function_->get_async_scope() : NULL;
   Handle<String> continuation;
   if (async_function_) {
     continuation = CreateUniqueIdentifier("_if_resume");
     async_scope = AsyncScope(previous_async_scope, continuation);
-    async_scope_ = &async_scope;
+    async_function_->set_async_scope(&async_scope);
   }
 
 
@@ -2450,7 +2453,7 @@ Statement* Parser::ParseIfStatement(ZoneStringList* labels, bool* ok) {
     // grabbing the resume function now.
     // the continuation for the resume function needs to be what it was
     // prior to the if.
-    async_scope_ = previous_async_scope;
+    async_function_->set_async_scope(previous_async_scope);
     
     // grab everything after the if as a resume function
     VariableProxy* fvar = DeclareAsyncContinuation(&async_scope, ok);
@@ -2484,10 +2487,10 @@ Statement* Parser::ParseAsyncLoopControlStatement(bool is_break, bool* ok) {
   if (!async_function_)
     return NULL;
 
-  if (!async_scope_)
+  if (!async_function_->get_async_scope())
     return NULL;
 
-  AsyncScope* break_target = async_scope_->break_scope();
+  AsyncScope* break_target = async_function_->get_async_scope()->break_scope();
   if (!break_target)
     return NULL;
 
@@ -2776,9 +2779,9 @@ Statement* Parser::ParseTryStatement(bool* ok) {
     Handle<String> has_caught = CreateUniqueIdentifier("_try_has_caught");
     Handle<String> skip_finally = CreateUniqueIdentifier("_try_skip_finally");
     Handle<String> exception = CreateUniqueIdentifier("_try_exception");
-    AsyncScope* previous_async_scope = async_scope_;
+    AsyncScope* previous_async_scope = async_function_->get_async_scope();
     AsyncScope async_scope = AsyncScope(previous_async_scope, continuation, Handle<String>(), exception, skip_finally);
-    async_scope_ = &async_scope;
+    async_function_->set_async_scope(&async_scope);
 
     AsyncTryData data;
     data.has_run = has_run;
@@ -2880,7 +2883,7 @@ Statement* Parser::ParseTryStatement(bool* ok) {
 
       if (async_function_) {
         // note that this has a catch block
-        async_scope_->set_has_catch(true);
+        async_function_->get_async_scope()->set_has_catch(true);
         // guard against catching two exceptions (need to proceed to the finally)
         VariableProxy* has_caught = top_scope_->NewUnresolved(data->has_caught, inside_with(), scanner().location().beg_pos);
         IfStatement* has_caught_check = new(zone()) IfStatement(isolate(), new(zone()) UnaryOperation(isolate(), Token::NOT, has_caught, scanner().location().beg_pos), catch_block, EmptyStatement());
@@ -2910,9 +2913,9 @@ Statement* Parser::ParseTryStatement(bool* ok) {
 
   if (async_function_) {
     if (tok == Token::FINALLY || catch_block == NULL) {
-      async_scope_->set_has_finally(true);
+      async_function_->get_async_scope()->set_has_finally(true);
     }
-    async_scope_ = data->previous_async_scope;
+    async_function_->set_async_scope(data->previous_async_scope);
   }
 
   Block* finally_block = NULL;
@@ -2978,14 +2981,14 @@ Statement* Parser::ParseAsyncDoOrWhileStatement(ZoneStringList* labels, bool* ok
   AwaitWhileData await_while_data;
   lifting_ = &await_while_data;
   
-  AsyncScope* previous_async_scope = await_while_data.previous_async_scope = async_scope_;
+  AsyncScope* previous_async_scope = await_while_data.previous_async_scope = async_function_->get_async_scope();
   await_while_data.first_run_name = first_run_name;
 
   Handle<String> continuation = CreateUniqueIdentifier("_while_resume");
   Handle<String> loop_break = CreateUniqueIdentifier("_while_break");
 
   AsyncScope async_scope = AsyncScope(previous_async_scope, continuation, loop_break);
-  async_scope_ = &async_scope;
+  async_function_->set_async_scope(&async_scope);
   
   Block* result = new(zone()) Block(isolate(), labels, 4, false);
 
@@ -3060,7 +3063,7 @@ Statement* Parser::ParseDoWhileStatement(ZoneStringList* labels,
 
       // since we are lifting, we need to reset continuations to the previous values
       // for the statements following the for loop.
-      async_scope_ = data->previous_async_scope;
+      async_function_->set_async_scope(data->previous_async_scope);
 
       if (loop != NULL) loop->Initialize(cond, mod_body);
       return loop;
@@ -3118,7 +3121,7 @@ Statement* Parser::ParseWhileStatement(ZoneStringList* labels, bool* ok) {
     cond = WrapAsyncLoopCondition(cond);
     // since we are lifting, we need to reset continuations to the previous values
     // for the statements following the for loop.
-    async_scope_ = data->previous_async_scope;
+    async_function_->set_async_scope(data->previous_async_scope);
   }
 
   if (loop != NULL) loop->Initialize(cond, body);
@@ -3263,10 +3266,10 @@ Statement* Parser::CallContinuationStatement(VariableProxy* fvar) {
 }
 
 Expression* Parser::WrapAsyncLoopCondition(Expression* cond) {
-  if (async_scope_->breaked()) {
+  if (async_function_->get_async_scope()->breaked()) {
     // there was a break after an await that needs to be
     // handled.
-    VariableProxy* breaked = top_scope_->NewUnresolved(async_scope_->loop_break(), inside_with(), scanner().location().beg_pos);
+    VariableProxy* breaked = top_scope_->NewUnresolved(async_function_->get_async_scope()->loop_break(), inside_with(), scanner().location().beg_pos);
     UnaryOperation* breaked_check = new(zone()) UnaryOperation(isolate(), Token::NOT, breaked, scanner().location().beg_pos);
     if (cond) {
       cond = new(zone()) BinaryOperation(isolate(), Token::AND, breaked_check, cond, scanner().location().beg_pos);
@@ -3301,7 +3304,7 @@ Statement* Parser::ParseForStatement(ZoneStringList* labels, bool* ok) {
     lifting_ = &await_for_data;
 
     // save off the old await resume func
-    AsyncScope* previous_async_scope = await_for_data.previous_async_scope = async_scope_;
+    AsyncScope* previous_async_scope = await_for_data.previous_async_scope = async_function_->get_async_scope();
 
     Handle<String> continuation = CreateUniqueIdentifier("_for_resume");
     Handle<String> loop_break = CreateUniqueIdentifier("_for_break");
@@ -3311,7 +3314,7 @@ Statement* Parser::ParseForStatement(ZoneStringList* labels, bool* ok) {
     // don't set the loop_next for the async scope, as there may not be a increment
     // in the loop
     AsyncScope async_scope = AsyncScope(previous_async_scope, continuation, loop_break);
-    async_scope_ = &async_scope;
+    async_function_->set_async_scope(&async_scope);
 
     Block* result = new(zone()) Block(isolate(), labels, 4, false);
 
@@ -3460,10 +3463,6 @@ Statement* Parser::ParseForStatement(ZoneStringList* labels, bool* ok) {
     // wrap the next in a function we can call via loop_next_
     if (next) {
       next = new(zone()) ExpressionStatement(CreateUnresolvedEmptyCall(data->loop_next));
-      // create a new scope that includes this next function
-//      printf("loop has async next thing %d\n", data->await_next.is_null());
-//      async_scope_ = AsyncScope(async_scope_, async_scope_.continuation(), data->await_next, async_scope_.loop_break());
-      //async_scope_->set_loop_next(data->loop_next);
     }
     init = NULL;
     data->init_name = name;
@@ -3481,7 +3480,7 @@ Statement* Parser::ParseForStatement(ZoneStringList* labels, bool* ok) {
 
     Handle<String> loop_has_run = data->loop_has_run;
     Handle<String> loop_next = data->loop_next;
-    Handle<String> loop_break = async_scope_->loop_break();
+    Handle<String> loop_break = async_function_->get_async_scope()->loop_break();
     // increment next if coming in from an async call.
     VariableProxy* loop_has_run_var1 = top_scope_->NewUnresolved(loop_has_run, inside_with());
     VariableProxy* loop_has_run_var2 = top_scope_->NewUnresolved(loop_has_run, inside_with());
@@ -3490,7 +3489,7 @@ Statement* Parser::ParseForStatement(ZoneStringList* labels, bool* ok) {
     Statement* next_stmt;
 
     Block* result = new(zone()) Block(isolate(), labels, 4, false);
-    if (async_scope_->breaked()) {
+    if (async_function_->get_async_scope()->breaked()) {
       {
         // gaurd the next call in case the loop was broken
         Statement* next_call = new(zone()) ExpressionStatement(CreateUnresolvedEmptyCall(loop_next));
@@ -3515,7 +3514,7 @@ Statement* Parser::ParseForStatement(ZoneStringList* labels, bool* ok) {
     
     // since we are lifting, we need to reset continuations to the previous values
     // for the statements following the for loop.
-    async_scope_ = data->previous_async_scope;
+    async_function_->set_async_scope(data->previous_async_scope);
     
     return result;
   }
