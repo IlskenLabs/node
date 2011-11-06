@@ -1461,7 +1461,7 @@ FunctionLiteral* Parser::LiftContinuation(Handle<String> function_name, AsyncSco
   }
 
   Scope* scope = (type == FunctionLiteral::DECLARATION &&
-                  !harmony_scoping_)
+                  !harmony_block_scoping_)
       ? NewScope(top_scope_->DeclarationScope(), Scope::FUNCTION_SCOPE, false)
       : NewScope(top_scope_, Scope::FUNCTION_SCOPE, inside_with());
     
@@ -1577,7 +1577,7 @@ Statement* Parser::ParseAwaitStatement(ZoneStringList* labels, bool* ok) {
     }
     
     Scope* scope = (type == FunctionLiteral::DECLARATION &&
-                    !harmony_scoping_)
+                    !harmony_block_scoping_)
         ? NewScope(top_scope_->DeclarationScope(), Scope::FUNCTION_SCOPE, false)
         : NewScope(top_scope_, Scope::FUNCTION_SCOPE, inside_with());
 
@@ -1588,14 +1588,14 @@ Statement* Parser::ParseAwaitStatement(ZoneStringList* labels, bool* ok) {
     for (int i = 0; i < parameter_names.length(); i++) {
       Handle<String> param_name = parameter_names.at(i);
       top_scope_->DeclareParameter(param_name,
-                                   harmony_scoping_
-                                   ? LET
-                                   : VAR);
+                                   harmony_block_scoping_
+                                   ? Variable::LET
+                                   : Variable::VAR);
     }
     
     // grab the continuation
     FunctionLiteral* continuation_func = LiftContinuation(continuation, async_function_->get_async_scope(), CHECK_OK);
-    VariableProxy* continuation_func_var = Declare(continuation, VAR, continuation_func, true, ok);
+    VariableProxy* continuation_func_var = Declare(continuation, Variable::VAR, continuation_func, true, ok);
     int end_pos = scanner().location().beg_pos;
     
     // create the continuation pump function
@@ -1730,7 +1730,7 @@ TryCatchStatement* Parser::WrapContinuation(Handle<String> continuation, Handle<
   {
     Target target(&target_stack_, &catch_collector);
     catch_scope = NewScope(top_scope_, Scope::CATCH_SCOPE, inside_with());
-    VariableMode mode = harmony_scoping_ ? LET : VAR;
+    Variable::Mode mode = harmony_block_scoping_ ? Variable::LET : Variable::VAR;
     catch_variable = catch_scope->DeclareLocal(catch_variable_name, mode);
     Scope* saved_scope = top_scope_;
     top_scope_ = catch_scope;
@@ -2766,10 +2766,10 @@ Statement* Parser::ParseTryStatement(bool* ok) {
     data.previous_async_scope = previous_async_scope;
     lifting_ = &data;
 
-    Declare(has_run, VAR, NULL, false, CHECK_OK);
-    Declare(has_caught, VAR, NULL, false, CHECK_OK);
-    Declare(exception, VAR, NULL, false, CHECK_OK);
-    Declare(skip_finally, VAR, NULL, false, CHECK_OK);
+    Declare(has_run, Variable::VAR, NULL, false, CHECK_OK);
+    Declare(has_caught, Variable::VAR, NULL, false, CHECK_OK);
+    Declare(exception, Variable::VAR, NULL, false, CHECK_OK);
+    Declare(skip_finally, Variable::VAR, NULL, false, CHECK_OK);
     
     VariableProxy* fvar = DeclareAsyncContinuation(&async_scope, CHECK_OK);
     Statement* stmt = CallContinuationStatement(fvar);
@@ -2974,7 +2974,7 @@ Statement* Parser::ParseAsyncDoOrWhileStatement(ZoneStringList* labels, bool* ok
   VariableProxy* fvar = DeclareAsyncContinuation(&async_scope, ok);
 
   if (async_scope.breaked()) {
-    Declare(loop_break, VAR, NULL, true, ok);
+    Declare(loop_break, Variable::VAR, NULL, true, ok);
   }
 
   // call the resume function immediately after declaring it.
@@ -2993,7 +2993,7 @@ Statement* Parser::ParseDoWhileStatement(ZoneStringList* labels,
   if (async_function_) {
     if (!lifting_) {
       Handle<String> first_run_name = CreateUniqueIdentifier("_while_first_run");
-      VariableProxy* first_run = Declare(first_run_name, VAR, NULL, false, CHECK_OK);
+      VariableProxy* first_run = Declare(first_run_name, Variable::VAR, NULL, false, CHECK_OK);
 
       Assignment* init = new(zone()) Assignment(isolate(), Token::ASSIGN, first_run, GetLiteralNumber(1), scanner().location().beg_pos);
       Statement* ret = ParseAsyncDoOrWhileStatement(labels, ok, first_run_name);
@@ -3124,7 +3124,7 @@ FunctionLiteral* Parser::CreateEmptyFunctionLiteral(Handle<String> function_name
   }
 
   Scope* scope = (type == FunctionLiteral::DECLARATION &&
-                  !harmony_scoping_)
+                  !harmony_block_scoping_)
       ? NewScope(top_scope_->DeclarationScope(), Scope::FUNCTION_SCOPE, false)
       : NewScope(top_scope_, Scope::FUNCTION_SCOPE, inside_with());
 
@@ -3173,7 +3173,7 @@ VariableProxy* Parser::DeclareAsyncContinuation(AsyncScope* async_scope, bool* o
 
   AsyncScope* previous_async_scope = async_scope->previous_scope();
   FunctionLiteral* continuation_func = LiftContinuation(sync_continuation, previous_async_scope, CHECK_OK);
-  VariableProxy* continuation_var = Declare(sync_continuation, VAR, continuation_func, true, CHECK_OK);
+  VariableProxy* continuation_var = Declare(sync_continuation, Variable::VAR, continuation_func, true, CHECK_OK);
 
   // check if this continuation needs to be wrapped in a try/catch,
   // check the parent scope's try scope, so as to prevent wrapping a continuation with itself.
@@ -3193,7 +3193,7 @@ VariableProxy* Parser::DeclareAsyncContinuation(AsyncScope* async_scope, bool* o
     }
 
     Scope* scope = (type == FunctionLiteral::DECLARATION &&
-                    !harmony_scoping_)
+                    !harmony_block_scoping_)
         ? NewScope(top_scope_->DeclarationScope(), Scope::FUNCTION_SCOPE, false)
         : NewScope(top_scope_, Scope::FUNCTION_SCOPE, inside_with());
 
@@ -3224,13 +3224,13 @@ VariableProxy* Parser::DeclareAsyncContinuation(AsyncScope* async_scope, bool* o
     async_func->set_function_token_position(start_pos);
 
     Handle<String> next_continuation = CreateUniqueIdentifier("_next_cont");
-    VariableProxy* next_continuation_var = Declare(next_continuation, VAR, NULL, false, CHECK_OK);
+    VariableProxy* next_continuation_var = Declare(next_continuation, Variable::VAR, NULL, false, CHECK_OK);
     TryCatchStatement* try_catch = WrapContinuation(sync_continuation, next_continuation, try_scope);
     body->Add(try_catch);
     body->Add(new(zone()) ReturnStatement(next_continuation_var));
   }
 
-  Declare(continuation, VAR, async_func, true, CHECK_OK);
+  Declare(continuation, Variable::VAR, async_func, true, CHECK_OK);
   return continuation_var;
 }
 
@@ -3300,7 +3300,7 @@ Statement* Parser::ParseForStatement(ZoneStringList* labels, bool* ok) {
     VariableProxy* fvar = DeclareAsyncContinuation(&async_scope, ok);
 
     if (!await_for_data.init_name.is_null())
-      Declare(await_for_data.init_name, VAR, NULL, false, CHECK_OK);
+      Declare(await_for_data.init_name, Variable::VAR, NULL, false, CHECK_OK);
 
     if (await_for_data.init != NULL)
       result->AddStatement(await_for_data.init);
@@ -3320,14 +3320,14 @@ Statement* Parser::ParseForStatement(ZoneStringList* labels, bool* ok) {
       }
 
       // now declare the function
-      Declare(loop_next, VAR, next_func, true, CHECK_OK);
+      Declare(loop_next, Variable::VAR, next_func, true, CHECK_OK);
 
       // declare the has run once var
-      Declare(loop_has_run, VAR, NULL, true, ok);
+      Declare(loop_has_run, Variable::VAR, NULL, true, ok);
     }
 
     if (async_scope.breaked()) {
-      Declare(loop_break, VAR, NULL, true, ok);
+      Declare(loop_break, Variable::VAR, NULL, true, ok);
     }
 
     // call the resume function immediately after declaring it.
@@ -4859,9 +4859,9 @@ FunctionLiteral* Parser::ParseFunctionLiteral(Handle<String> function_name,
     }
     if (is_async_function) {
       top_scope_->DeclareParameter(async_function_->callback(),
-        harmony_scoping_
-         ? LET
-         : VAR);
+        harmony_block_scoping_
+         ? Variable::LET
+         : Variable::VAR);
        num_parameters++;
     }
     Expect(Token::RPAREN, CHECK_OK);
