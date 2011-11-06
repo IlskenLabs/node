@@ -65,12 +65,6 @@ The third argument is used to specify additional options, which defaults to:
 `cwd` allows you to specify the working directory from which the process is spawned.
 Use `env` to specify environment variables that will be visible to the new process.
 
-There is a deprecated option called `customFds` which allows one to specify
-specific file descriptors for the stdio of the child process. This API is
-was not portable to all platforms and therefore removed. 
-With `customFds` it was possible to hook up the new process' [stdin, stdout,
-stderr] to existing streams; `-1` meant that a new stream should be created.
-
 `setsid`, if set true, will cause the subprocess to be run in a new session.
 
 Example of running `ls -lh /usr`, capturing `stdout`, `stderr`, and the exit code:
@@ -146,6 +140,17 @@ spawning the process with an empty environment rather than using
 `process.env`. This due to backwards compatibility issues with a deprecated
 API.
 
+There is a deprecated option called `customFds` which allows one to specify
+specific file descriptors for the stdio of the child process. This API was
+not portable to all platforms and therefore removed.
+With `customFds` it was possible to hook up the new process' [stdin, stdout,
+stderr] to existing streams; `-1` meant that a new stream should be created.
+Use at your own risk.
+
+There are several internal options. In particular `stdinStream`,
+`stdoutStream`, `stderrStream`. They are for INTERNAL USE ONLY. As with all
+undocumented APIs in Node, they should not be used.
+
 See also: `child_process.exec()`
 
 ### child_process.exec(command, [options], callback)
@@ -213,7 +218,7 @@ For example:
 
     n.send({ hello: 'world' });
 
-And then the child script, `'sub.js'` would might look like this:
+And then the child script, `'sub.js'` might look like this:
 
     process.on('message', function(m) {
       console.log('CHILD got message:', m);

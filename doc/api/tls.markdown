@@ -37,6 +37,8 @@ The `options` object has these possibilities:
   - `key`: A string or `Buffer` containing the private key of the server in
     PEM format. (Required)
 
+  - `passphrase`: A string of passphrase for the private key.
+
   - `cert`: A string or `Buffer` containing the certificate key of the server in
     PEM format. (Required)
 
@@ -106,7 +108,9 @@ Creates a new client connection to the given `port` and `host`. (If `host`
 defaults to `localhost`.) `options` should be an object which specifies
 
   - `key`: A string or `Buffer` containing the private key of the client in
-    PEM format. (Required)
+    PEM format.
+
+  - `passphrase`: A string of passphrase for the private key.
 
   - `cert`: A string or `Buffer` containing the certificate key of the client in
     PEM format.
@@ -251,6 +255,12 @@ Stops the server from accepting new connections. This function is
 asynchronous, the server is finally closed when the server emits a `'close'`
 event.
 
+#### server.address()
+
+Returns the bound address and port of the server as reported by the operating
+system.
+See [net.Server.address()](net.html#server.address) for more information.
+
 #### server.addContext(hostname, credentials)
 
 Add secure context that will be used if client request's SNI hostname is
@@ -324,3 +334,18 @@ Example:
 
 If the peer does not provide a certificate, it returns `null` or an empty
 object.
+
+#### cleartextStream.address()
+
+Returns the bound address and port of the underlying socket as reported by the
+operating system. Returns an object with two properties, e.g.
+`{"address":"192.168.57.1", "port":62053}`
+
+#### cleartextStream.remoteAddress
+
+The string representation of the remote IP address. For example,
+`'74.125.127.100'` or `'2001:4860:a005::68'`.
+
+#### cleartextStream.remotePort
+
+The numeric representation of the remote port. For example, `443`.

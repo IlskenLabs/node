@@ -20,6 +20,23 @@ fs.ReadStream into a zlib stream, then into an fs.WriteStream.
 
     inp.pipe(gzip).pipe(out);
 
+Compressing or decompressing data in one step can be done by using
+the convenience methods.
+
+    var input = '.................................';
+    zlib.deflate(input, function(err, buffer) {
+      if (!err) {
+        console.log(buffer.toString('base64'));
+      }
+    });
+
+    var buffer = new Buffer('eJzT0yMAAGTvBe8=', 'base64');
+    zlib.unzip(buffer, function(err, buffer) {
+      if (!err) {
+        console.log(buffer.toString());
+      }
+    });
+
 To use this module in an HTTP client or server, use the
 [accept-encoding](http://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html#sec14.3)
 on requests, and the
@@ -28,8 +45,8 @@ header on responses.
 
 **Note: these examples are drastically simplified to show
 the basic concept.**  Zlib encoding can be expensive, and the results
-ought to be cached.  See <a href="#memory_Usage_Tuning">Memory Usage
-Tuning</a> below for more information on the speed/memory/compression
+ought to be cached.  See [Memory Usage Tuning](#memory_Usage_Tuning)
+below for more information on the speed/memory/compression
 tradeoffs involved in zlib usage.
 
     // client request example
@@ -91,6 +108,35 @@ All of the constants defined in zlib.h are also defined on
 documentation.  See <http://zlib.net/manual.html#Constants>
 for more details.
 
+### zlib.createGzip([options])
+
+Returns a new [Gzip](#zlib.Gzip) object with an [options](#options).
+
+### zlib.createGunzip([options])
+
+Returns a new [Gunzip](#zlib.Gunzip) object with an [options](#options).
+
+### zlib.createDeflate([options])
+
+Returns a new [Deflate](#zlib.Deflate) object with an [options](#options).
+
+### zlib.createInflate([options])
+
+Returns a new [Inflate](#zlib.Inflate) object with an [options](#options).
+
+### zlib.createDeflateRaw([options])
+
+Returns a new [DeflateRaw](#zlib.DeflateRaw) object with an [options](#options).
+
+### zlib.createInflateRaw([options])
+
+Returns a new [InflateRaw](#zlib.InflateRaw) object with an [options](#options).
+
+### zlib.createUnzip([options])
+
+Returns a new [Unzip](#zlib.Unzip) object with an [options](#options).
+
+
 ### zlib.Gzip
 
 Compress data using gzip.
@@ -120,9 +166,46 @@ Decompress a raw deflate stream.
 Decompress either a Gzip- or Deflate-compressed stream by auto-detecting
 the header.
 
-### Options
+## Convenience Methods
 
-Each class takes an options object.  All options are optional.
+All of these take a string or buffer as the first argument, and call the
+supplied callback with `callback(error, result)`.  The
+compression/decompression engine is created using the default settings
+in all convenience methods.  To supply different options, use the
+zlib classes directly.
+
+### zlib.deflate(buf, callback)
+
+Compress a string with Deflate.
+
+### zlib.deflateRaw(buf, callback)
+
+Compress a string with DeflateRaw.
+
+### zlib.gzip(buf, callback)
+
+Compress a string with Gzip.
+
+### zlib.gunzip(buf, callback)
+
+Decompress a raw Buffer with Gunzip.
+
+### zlib.inflate(buf, callback)
+
+Decompress a raw Buffer with Inflate.
+
+### zlib.inflateRaw(buf, callback)
+
+Decompress a raw Buffer with InflateRaw.
+
+### zlib.unzip(buf, callback)
+
+Decompress a raw Buffer with Unzip.
+
+## Options
+
+Each class takes an options object.  All options are optional.  (The
+convenience methods use the default settings for all options.)
 
 Note that some options are only
 relevant when compressing, and are ignored by the decompression classes.

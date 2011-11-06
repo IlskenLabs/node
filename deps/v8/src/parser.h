@@ -166,13 +166,13 @@ class ParserApi {
   // Generic preparser generating full preparse data.
   static ScriptDataImpl* PreParse(UC16CharacterStream* source,
                                   v8::Extension* extension,
-                                  bool harmony_scoping);
+                                  bool harmony_block_scoping);
 
   // Preparser that only does preprocessing that makes sense if only used
   // immediately after.
   static ScriptDataImpl* PartialPreParse(UC16CharacterStream* source,
                                          v8::Extension* extension,
-                                         bool harmony_scoping);
+                                         bool harmony_block_scoping);
 };
 
 // ----------------------------------------------------------------------------
@@ -439,7 +439,7 @@ class Parser {
   void ReportMessageAt(Scanner::Location loc,
                        const char* message,
                        Vector<Handle<String> > args);
-  void SetHarmonyScoping(bool block_scoping);
+  void SetHarmonyBlockScoping(bool block_scoping);
 
  private:
   // Limit on number of function parameters is chosen arbitrarily.
@@ -550,6 +550,11 @@ class Parser {
   FunctionLiteral* LiftContinuation(Handle<String> function_name, AsyncScope* previous_async_scope, bool* ok);
   TryCatchStatement* WrapContinuation(Handle<String> continuation, Handle<String> next_continuation, AsyncScope* try_scope);
   FunctionLiteral* CreateEmptyFunctionLiteral(Handle<String> function_name);
+
+  Expression* NewCompareNode(Token::Value op,
+                             Expression* x,
+                             Expression* y,
+                             int position);
 
   // Populate the constant properties fixed array for a materialized object
   // literal.
@@ -670,7 +675,7 @@ class Parser {
   void CheckConflictingVarDeclarations(Scope* scope, bool* ok);
 
   // Parser support
-  VariableProxy* Declare(Handle<String> name, VariableMode mode,
+  VariableProxy* Declare(Handle<String> name, Variable::Mode mode,
                          FunctionLiteral* fun,
                          bool resolve,
                          bool* ok);
@@ -750,7 +755,7 @@ class Parser {
   // Heuristically that means that the function will be called immediately,
   // so never lazily compile it.
   bool parenthesized_function_;
-  bool harmony_scoping_;
+  bool harmony_block_scoping_;
 
   AsyncFunction* async_function_;
   void* lifting_;
