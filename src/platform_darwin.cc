@@ -39,8 +39,6 @@
 #include <arpa/inet.h>
 #include <ifaddrs.h>
 
-
-
 namespace node {
 
 using namespace v8;
@@ -222,5 +220,10 @@ v8::Handle<v8::Value> Platform::GetInterfaceAddresses() {
 
   return scope.Close(ret);
 }
+
+v8::Handle<v8::Value> Platform::SetupTun(const v8::Arguments& args) {
+  return v8::Handle<v8::Value>();
+}
+
 
 }  // namespace node
