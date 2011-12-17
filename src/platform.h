@@ -39,6 +39,7 @@ class Platform {
     return adjusted ? GetUptimeImpl() - prog_start_time : GetUptimeImpl();
   }
   static v8::Handle<v8::Value> GetInterfaceAddresses();
+  static v8::Handle<v8::Value> SetupTun(const v8::Arguments& args);
  private:
   static double GetUptimeImpl();
   static double prog_start_time;

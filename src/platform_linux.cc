@@ -48,6 +48,11 @@
 # include <sys/sysinfo.h>
 #endif
 
+#include <linux/if_tun.h>
+#include <memory.h>
+#include <stropts.h>
+#include <asm-generic/ioctl.h>
+
 extern char **environ;
 
 namespace node {
@@ -390,6 +395,27 @@ Handle<Value> Platform::GetInterfaceAddresses() {
   freeifaddrs(addrs);
 
   return scope.Close(ret);
+}
+
+v8::Handle<v8::Value> Platform::SetupTun(const v8::Arguments& args) {
+  HandleScope scope;
+  if (args.Length() > 0) {
+      Local<Value> value = args[0];
+      if (value->IsNumber()) {
+          Local<Number> number = value->ToNumber();
+          int fd = (int)number->Value();
+          struct ifreq ifr;
+          memset(&ifr, 0, sizeof(ifr));
+          ifr.ifr_flags = IFF_TUN | IFF_NO_PI;
+          int err;
+          strncpy(ifr.ifr_name, "tun", IFNAMSIZ);
+          if ((err = ioctl(fd, TUNSETIFF, (void *)&ifr)) < 0) {
+              return String::New("Failure during ioctl.");
+          }
+          return Handle<Value>();
+      }
+  }
+  return String::New("No fd provided.");
 }
 
 

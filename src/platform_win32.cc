@@ -19,7 +19,6 @@
 // OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
 // USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-
 #include <node.h>
 #include "platform.h"
 
@@ -286,5 +285,104 @@ Handle<Value> Platform::GetInterfaceAddresses() {
   return scope.Close(Object::New());
 }
 
+static char* GetDeviceGuid()
+{
+  const char* AdapterKey = "SYSTEM\\CurrentControlSet\\Control\\Class\\{4D36E972-E325-11CE-BFC1-08002BE10318}";
+  HKEY adapter_key;
+  if (ERROR_SUCCESS != RegOpenKeyExA(HKEY_LOCAL_MACHINE, AdapterKey, 0, KEY_READ, &adapter_key))
+    return NULL;
+  int index = 0;
+  char keyName[256];
+  while (ERROR_SUCCESS == RegEnumKeyA(adapter_key, index++, keyName, 256))
+  {
+    HKEY reg_adapter;
+    if (ERROR_SUCCESS != RegOpenKeyA(adapter_key, keyName, &reg_adapter))
+      continue;
+    char value[256];
+    DWORD len = 256;
+    if (ERROR_SUCCESS != RegQueryValueExA(reg_adapter, "ComponentId", NULL, NULL, reinterpret_cast<LPBYTE>(value), &len))
+    {
+      RegCloseKey(reg_adapter);
+      continue;
+    }
+    if (strcmp("tap0901", value) == 0)
+    {
+      char* ret = (char*)malloc(256);
+      len = 256;
+      if (ERROR_SUCCESS != RegQueryValueExA(reg_adapter, "NetCfgInstanceId", NULL, NULL, reinterpret_cast<LPBYTE>(ret), &len))
+      {
+        RegCloseKey(reg_adapter);
+        free(ret);
+        return NULL;
+      }
+      RegCloseKey(reg_adapter);
+      RegCloseKey(adapter_key);
+      return ret;
+    }
+  }
+  RegCloseKey(adapter_key);
+  return NULL;
+}
+
+static char* GetNetworkName(const char* guid)
+{
+  char ConnectionKey[256];
+  sprintf(ConnectionKey, "SYSTEM\\CurrentControlSet\\Control\\Network\\{4D36E972-E325-11CE-BFC1-08002BE10318}\\%s\\Connection", guid);
+  HKEY connection_key;
+  if (ERROR_SUCCESS != RegOpenKeyExA(HKEY_LOCAL_MACHINE, ConnectionKey, 0, KEY_READ, &connection_key))
+    return NULL;
+  
+  char* ret = (char*)malloc(256);
+  DWORD len = 256;
+  if (ERROR_SUCCESS != RegQueryValueExA(connection_key, "Name", NULL, NULL, reinterpret_cast<LPBYTE>(ret), &len))
+  {
+    free(ret);
+    return NULL;
+  }
+
+  return ret;
+}
+
+#define TAP_CONTROL_CODE(request, method) CTL_CODE(FILE_DEVICE_UNKNOWN, request, method, FILE_ANY_ACCESS)
+
+v8::Handle<v8::Value> Platform::SetupTun(const v8::Arguments& args) {
+  char* deviceGuid = GetDeviceGuid();
+  if (NULL == deviceGuid)
+    return String::New("Error retrieving device guid. Is the tap driver installed?");
+
+  char* networkName = GetNetworkName(deviceGuid);
+  if (NULL == networkName) {
+    free(deviceGuid);
+    return String::New("Error retrieving network name for tap device.");
+  }
+
+  char deviceFile[256];
+  sprintf(deviceFile, "\\\\.\\Global\\%s.tap", deviceGuid);
+  free(deviceGuid);
+
+  HANDLE fd = CreateFileA(deviceFile, FILE_WRITE_ACCESS | FILE_READ_ACCESS, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_SYSTEM, NULL);
+  if (INVALID_HANDLE_VALUE == fd) {
+    free(networkName);
+    return String::New("Error opening tap file. Are you running as root?");
+  }
+
+  DWORD len;
+  int status = 1;
+  DeviceIoControl(fd, TAP_CONTROL_CODE(6, METHOD_BUFFERED), &status, 4, &status, 4, &len, NULL);
+
+  int data[3];
+  int ip = 0x0100000a;
+  int network = 0x0000000a;
+  int netmask = 0x00ffffff;
+  data[0] = ip;
+  data[1] = network;
+  data[2] = netmask;
+  DeviceIoControl(fd, TAP_CONTROL_CODE(10, METHOD_BUFFERED), data, 12, data, 12, &len, NULL);
+
+  // int result = _open_osfhandle(fd, O_RDWR);
+  // return Integer::New(result);
+
+  return Integer::New(-reinterpret_cast<int>(fd));
+}
 
 } // namespace node

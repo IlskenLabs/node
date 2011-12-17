@@ -119,6 +119,12 @@
   }
 
 
+static HANDLE __get_osfhandle(intptr_t fd) {
+  if (fd > 0)
+    return _get_osfhandle(fd);
+  return (HANDLE)-fd;
+}
+
 void uv_fs_init() {
   _fmode = _O_BINARY;
 }
@@ -293,7 +299,7 @@ void fs__read(uv_fs_t* req, uv_file file, void *buf, size_t length,
 
   VERIFY_UV_FILE(file, req);
 
-  handle = (HANDLE) _get_osfhandle(file);
+  handle = (HANDLE) __get_osfhandle(file);
   if (handle == INVALID_HANDLE_VALUE) {
     SET_REQ_RESULT(req, -1);
     return;
@@ -333,7 +339,7 @@ void fs__write(uv_fs_t* req, uv_file file, void *buf, size_t length,
 
   VERIFY_UV_FILE(file, req);
 
-  handle = (HANDLE) _get_osfhandle(file);
+  handle = (HANDLE) __get_osfhandle(file);
   if (handle == INVALID_HANDLE_VALUE) {
     SET_REQ_RESULT(req, -1);
     return;
@@ -552,7 +558,7 @@ void fs__fsync(uv_fs_t* req, uv_file file) {
 
   VERIFY_UV_FILE(file, req);
 
-  result = FlushFileBuffers((HANDLE)_get_osfhandle(file)) ? 0 : -1;
+  result = FlushFileBuffers((HANDLE)__get_osfhandle(file)) ? 0 : -1;
   if (result == -1) {
     SET_REQ_RESULT_WIN32_ERROR(req, GetLastError());
   } else {
@@ -626,7 +632,7 @@ void fs__fchmod(uv_fs_t* req, uv_file file, int mode) {
 
   VERIFY_UV_FILE(file, req);
 
-  handle = (HANDLE)_get_osfhandle(file);
+  handle = (HANDLE)__get_osfhandle(file);
 
   nt_status = pNtQueryInformationFile(handle,
                                       &io_status,

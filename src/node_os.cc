@@ -166,6 +166,9 @@ static Handle<Value> GetInterfaceAddresses(const Arguments& args) {
   return Platform::GetInterfaceAddresses();
 }
 
+static Handle<Value> SetupTun(const Arguments& args) {
+  return Platform::SetupTun(args);
+}
 
 void OS::Initialize(v8::Handle<v8::Object> target) {
   HandleScope scope;
@@ -179,6 +182,7 @@ void OS::Initialize(v8::Handle<v8::Object> target) {
   NODE_SET_METHOD(target, "getOSType", GetOSType);
   NODE_SET_METHOD(target, "getOSRelease", GetOSRelease);
   NODE_SET_METHOD(target, "getInterfaceAddresses", GetInterfaceAddresses);
+  NODE_SET_METHOD(target, "setupTun", SetupTun);
 }
 
 
