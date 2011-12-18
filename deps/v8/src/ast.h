@@ -116,6 +116,7 @@ typedef ZoneList<Handle<Object> > ZoneObjectList;
 
 
 #define DECLARE_NODE_TYPE(type)                                         \
+  virtual void printType() { printf(#type); printf("\n"); }             \
   virtual void Accept(AstVisitor* v);                                   \
   virtual AstNode::Type node_type() const { return AstNode::k##type; }  \
 
@@ -149,6 +150,7 @@ class AstNode: public ZoneObject {
 
   virtual void Accept(AstVisitor* v) = 0;
   virtual Type node_type() const { return kInvalid; }
+  virtual void printType() { printf("none\n"); }
 
   // Type testing & conversion functions overridden by concrete subclasses.
 #define DECLARE_NODE_FUNCTIONS(type)                  \
@@ -1671,7 +1673,8 @@ class FunctionLiteral: public Expression {
                   Handle<FixedArray> this_property_assignments,
                   int parameter_count,
                   Type type,
-                  bool has_duplicate_parameters)
+                  bool has_duplicate_parameters,
+                  bool is_async)
       : Expression(isolate),
         name_(name),
         scope_(scope),
@@ -1682,7 +1685,8 @@ class FunctionLiteral: public Expression {
         expected_property_count_(expected_property_count),
         handler_count_(handler_count),
         parameter_count_(parameter_count),
-        function_token_position_(RelocInfo::kNoPosition) {
+        function_token_position_(RelocInfo::kNoPosition),
+        is_async_(is_async) {
     bitfield_ =
         HasOnlySimpleThisPropertyAssignments::encode(
             has_only_simple_this_property_assignments) |
@@ -1705,6 +1709,7 @@ class FunctionLiteral: public Expression {
   bool is_anonymous() const { return IsAnonymous::decode(bitfield_); }
   bool is_classic_mode() const { return language_mode() == CLASSIC_MODE; }
   LanguageMode language_mode() const;
+  bool is_async() const { return is_async_; }
 
   int materialized_literal_count() { return materialized_literal_count_; }
   int expected_property_count() { return expected_property_count_; }
@@ -1756,6 +1761,7 @@ class FunctionLiteral: public Expression {
   class IsAnonymous: public BitField<bool, 2, 1> {};
   class Pretenure: public BitField<bool, 3, 1> {};
   class HasDuplicateParameters: public BitField<bool, 4, 1> {};
+  bool is_async_;
 };
 
 
