@@ -360,7 +360,7 @@ v8::Handle<v8::Value> Platform::SetupTun(const v8::Arguments& args) {
   sprintf(deviceFile, "\\\\.\\Global\\%s.tap", deviceGuid);
   free(deviceGuid);
 
-  HANDLE fd = CreateFileA(deviceFile, FILE_WRITE_ACCESS | FILE_READ_ACCESS, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_SYSTEM, NULL);
+  HANDLE fd = CreateFileA(deviceFile, FILE_WRITE_ACCESS | FILE_READ_ACCESS, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_SYSTEM | FILE_FLAG_NO_BUFFERING | FILE_FLAG_WRITE_THROUGH, NULL);
   if (INVALID_HANDLE_VALUE == fd) {
     free(networkName);
     return String::New("Error opening tap file. Are you running as root?");
